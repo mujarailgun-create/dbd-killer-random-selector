@@ -1,0 +1,2388 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>DbD Killer Roulette & Rotation Tracker</title>
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Google Fonts: Cinzel, Inter, Noto Sans JP -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@700;900&family=Inter:wght@400;500;600;700&family=Noto+Sans+JP:wght@400;500;700;900&display=swap" rel="stylesheet">
+  <!-- Lucide Icons -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <!-- Chart.js -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            dbd: {
+              dark: '#0c0d10',
+              panel: '#15171e',
+              card: '#1c1f28',
+              border: '#2c3140',
+              red: '#e51e2b',
+              redHover: '#ff2d3c',
+              blood: '#880f16',
+              accent: '#ff8a00',
+              muted: '#717b94'
+            }
+          },
+          fontFamily: {
+            cinzel: ['Cinzel', 'serif'],
+            sans: ['Inter', 'Noto Sans JP', 'sans-serif'],
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    /* Custom Scrollbar */
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: #0c0d10; }
+    ::-webkit-scrollbar-thumb { background: #2c3140; border-radius: 3px; }
+    ::-webkit-scrollbar-thumb:hover { background: #e51e2b; }
+
+    /* Fog effect */
+    .bg-fog {
+      background: radial-gradient(circle at 50% 15%, rgba(229, 30, 43, 0.08) 0%, rgba(12, 13, 16, 0.98) 75%),
+                  radial-gradient(circle at 10% 85%, rgba(255, 138, 0, 0.04) 0%, transparent 50%);
+    }
+
+    .roulette-glow {
+      box-shadow: 0 0 35px rgba(229, 30, 43, 0.35), inset 0 0 15px rgba(229, 30, 43, 0.15);
+    }
+    .text-blood-glow {
+      text-shadow: 0 0 12px rgba(229, 30, 43, 0.6);
+    }
+
+    @keyframes spin-shake {
+      0% { transform: scale(1); }
+      50% { transform: scale(1.02); }
+      100% { transform: scale(1); }
+    }
+    .animate-spin-shake {
+      animation: spin-shake 0.1s infinite;
+    }
+  </style>
+</head>
+<body class="bg-dbd-dark bg-fog text-gray-200 min-h-screen font-sans antialiased selection:bg-dbd-red selection:text-white pb-24">
+
+  <!-- Header & Navigation -->
+  <header class="border-b border-dbd-border/80 bg-dbd-panel/90 sticky top-0 z-40 backdrop-blur-md">
+    <div class="max-w-6xl mx-auto px-4 py-3 flex flex-wrap items-center justify-between gap-4">
+      <div class="flex items-center gap-3">
+        <div class="w-9 h-9 rounded-xl bg-dbd-red/20 border border-dbd-red/40 flex items-center justify-center text-dbd-red shadow-md shadow-dbd-red/20">
+          <i data-lucide="skull" class="w-5 h-5"></i>
+        </div>
+        <div>
+          <h1 class="text-base sm:text-lg font-black font-cinzel text-white tracking-wider flex items-center gap-2">
+            DEAD BY DAYLIGHT
+            <span class="text-[10px] px-2 py-0.5 rounded bg-dbd-red/20 text-dbd-red border border-dbd-red/30 font-mono font-bold">ver.10.2.2</span>
+          </h1>
+          <p class="text-[11px] text-dbd-muted">全キラー制覇・戦績分析・アドオン＆パーク抽選ツール</p>
+        </div>
+      </div>
+
+      <!-- Navigation Tabs -->
+      <nav class="flex items-center gap-1.5 bg-dbd-card/80 p-1 rounded-xl border border-dbd-border text-xs font-semibold overflow-x-auto max-w-full">
+        <button id="nav-btn-roulette" onclick="switchTab('roulette')" class="nav-tab px-3.5 py-1.5 rounded-lg text-white bg-dbd-red transition flex items-center gap-1.5 shrink-0 cursor-pointer">
+          <i data-lucide="dices" class="w-4 h-4"></i>
+          <span>キラー抽選</span>
+        </button>
+        <button id="nav-btn-analytics" onclick="switchTab('analytics')" class="nav-tab px-3.5 py-1.5 rounded-lg text-gray-400 hover:text-white transition flex items-center gap-1.5 shrink-0 cursor-pointer">
+          <i data-lucide="bar-chart-3" class="w-4 h-4"></i>
+          <span>戦績分析</span>
+        </button>
+        <button id="nav-btn-addons" onclick="switchTab('addons')" class="nav-tab px-3.5 py-1.5 rounded-lg text-gray-400 hover:text-white transition flex items-center gap-1.5 shrink-0 cursor-pointer">
+          <i data-lucide="sparkles" class="w-4 h-4"></i>
+          <span>アドオン抽選 (2枠)</span>
+        </button>
+        <button id="nav-btn-perks" onclick="switchTab('perks')" class="nav-tab px-3.5 py-1.5 rounded-lg text-gray-400 hover:text-white transition flex items-center gap-1.5 shrink-0 cursor-pointer">
+          <i data-lucide="shield" class="w-4 h-4"></i>
+          <span>パーク抽選 (4枠)</span>
+        </button>
+      </nav>
+    </div>
+  </header>
+
+  <!-- Main Container -->
+  <main class="max-w-6xl mx-auto px-4 pt-6">
+
+    <!-- ========================================== -->
+    <!-- VIEW 1: キラー抽選 & 進捗管理 (ROULETTE) -->
+    <!-- ========================================== -->
+    <section id="view-roulette" class="space-y-6">
+
+      <!-- Mode & Duplicate Switch Banner -->
+      <div class="flex flex-wrap items-center justify-between gap-4 p-4 rounded-xl bg-dbd-panel border border-dbd-border">
+        <div class="flex items-center gap-3">
+          <div class="p-2 rounded-lg bg-amber-500/10 border border-amber-500/30 text-amber-400">
+            <i data-lucide="repeat" class="w-5 h-5"></i>
+          </div>
+          <div>
+            <h3 class="text-sm font-bold text-white">重複抽選モード (フリー対戦)</h3>
+            <p class="text-xs text-dbd-muted">ONにすると完了・未完了を問わず全キラーから何度でも抽選します</p>
+          </div>
+        </div>
+
+        <label class="relative inline-flex items-center cursor-pointer select-none">
+          <input type="checkbox" id="toggle-allow-duplicates" class="sr-only peer">
+          <div class="w-11 h-6 bg-gray-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-amber-500"></div>
+          <span id="allow-duplicates-label" class="ml-2.5 text-xs font-bold text-gray-400">OFF (制覇モード)</span>
+        </label>
+      </div>
+
+      <!-- Roulette Top Grid -->
+      <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+        
+        <!-- Roulette Left Dashboard (7 cols) -->
+        <div class="lg:col-span-7 bg-dbd-panel border border-dbd-border/80 rounded-2xl p-5 sm:p-6 relative overflow-hidden roulette-glow flex flex-col justify-between">
+          <div class="flex items-center justify-between mb-3">
+            <div class="flex items-center gap-2">
+              <span class="w-2.5 h-2.5 rounded-full bg-dbd-red animate-ping"></span>
+              <span class="text-xs font-bold uppercase tracking-widest text-gray-400">TARGET KILLER SELECTOR</span>
+            </div>
+            <span id="roulette-pool-count" class="text-xs bg-dbd-card px-2.5 py-1 rounded border border-dbd-border text-gray-300 font-mono">
+              抽選対象: 44 体
+            </span>
+          </div>
+
+          <!-- Roulette Display Box -->
+          <div id="roulette-display-box" class="my-3 py-8 sm:py-9 bg-dbd-dark/90 rounded-xl border border-dbd-border text-center transition-all relative overflow-hidden">
+            <div id="roulette-flair" class="absolute inset-0 bg-gradient-to-t from-dbd-red/10 to-transparent pointer-events-none opacity-0 transition-opacity"></div>
+            
+            <div id="killer-avatar-wrapper" class="w-16 h-16 sm:w-20 sm:h-20 mx-auto rounded-full bg-dbd-card border-2 border-dbd-border flex items-center justify-center mb-3 text-dbd-red shadow-lg transition-transform">
+              <i id="killer-icon" data-lucide="skull" class="w-8 h-8 sm:w-10 sm:h-10"></i>
+            </div>
+
+            <h2 id="roulette-killer-name-ja" class="text-2xl sm:text-4xl font-extrabold text-white tracking-wide transition-colors">
+              キラーを抽選
+            </h2>
+            <p id="roulette-killer-name-en" class="text-xs sm:text-sm text-dbd-muted mt-1 font-mono tracking-wider">
+              Ready to roll
+            </p>
+
+            <!-- Win / Lose Control Panel -->
+            <div id="roulette-match-actions" class="mt-5 hidden flex flex-col items-center gap-2.5 px-4">
+              <div class="text-[11px] font-bold text-gray-400 flex items-center gap-2">
+                <span>現在の戦績: </span>
+                <span id="target-killer-stat-display" class="font-mono text-white">0勝 0敗 (挑戦中: 1戦目)</span>
+              </div>
+              <div class="flex items-center justify-center gap-3 w-full max-w-xs">
+                <button id="btn-match-win" class="flex-1 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold flex items-center justify-center gap-1.5 shadow-lg shadow-emerald-900/30 transition cursor-pointer">
+                  <i data-lucide="trophy" class="w-4 h-4"></i>
+                  Win (勝利して次へ)
+                </button>
+                <button id="btn-match-lose" class="flex-1 py-2 rounded-xl bg-rose-700/80 hover:bg-rose-600 text-white text-xs font-bold flex items-center justify-center gap-1.5 shadow-lg shadow-rose-950/30 transition cursor-pointer">
+                  <i data-lucide="x-circle" class="w-4 h-4"></i>
+                  Lose (再挑戦)
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Spin Action Button -->
+          <div class="mt-3">
+            <button id="btn-spin" class="w-full py-4 rounded-xl bg-gradient-to-r from-dbd-blood via-dbd-red to-dbd-accent hover:brightness-110 active:scale-[0.99] text-white font-black text-base sm:text-lg tracking-wider flex items-center justify-center gap-3 shadow-lg shadow-dbd-red/20 transition cursor-pointer">
+              <i data-lucide="dices" class="w-6 h-6"></i>
+              <span id="btn-spin-text">ROULETTE START (未制覇から抽選)</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Progress Tracker Card (5 cols) -->
+        <div id="rotation-progress-panel" class="lg:col-span-5 bg-dbd-panel border border-dbd-border/80 rounded-2xl p-5 sm:p-6 flex flex-col justify-between">
+          <div>
+            <div class="flex items-center justify-between mb-3">
+              <h3 class="text-sm font-bold uppercase tracking-wider text-gray-300 flex items-center gap-2">
+                <i data-lucide="target" class="w-4 h-4 text-dbd-red"></i>
+                制覇進捗状況
+              </h3>
+              <span id="completion-badge" class="text-xs px-2.5 py-0.5 rounded-full bg-dbd-border text-gray-300 font-semibold font-mono">
+                0% 達成
+              </span>
+            </div>
+
+            <!-- Numbers -->
+            <div class="flex items-baseline gap-2 mb-3">
+              <span id="stat-completed-count" class="text-4xl sm:text-5xl font-black text-white">0</span>
+              <span class="text-lg text-dbd-muted font-bold">/</span>
+              <span id="stat-total-count" class="text-xl text-dbd-muted font-semibold">44</span>
+              <span class="text-sm text-gray-400 ml-1">キラー制覇</span>
+            </div>
+
+            <!-- Progress bar -->
+            <div class="w-full h-3.5 bg-dbd-card rounded-full overflow-hidden p-0.5 border border-dbd-border mb-6">
+              <div id="stat-progress-bar" class="h-full bg-gradient-to-r from-dbd-red to-dbd-accent rounded-full transition-all duration-500 ease-out" style="width: 0%;"></div>
+            </div>
+
+            <!-- Mini Stats Grid -->
+            <div class="grid grid-cols-3 gap-2 py-3 px-3 rounded-xl bg-dbd-card/60 border border-dbd-border/60 text-center">
+              <div>
+                <p class="text-[11px] text-dbd-muted font-medium">残りキラー</p>
+                <p id="stat-remaining-count" class="text-lg font-bold text-amber-400 font-mono">44</p>
+              </div>
+              <div class="border-x border-dbd-border/60">
+                <p class="text-[11px] text-dbd-muted font-medium">除外 (BAN)</p>
+                <p id="stat-banned-count" class="text-lg font-bold text-gray-400 font-mono">0</p>
+              </div>
+              <div>
+                <p class="text-[11px] text-dbd-muted font-medium">達成率</p>
+                <p id="stat-percentage" class="text-lg font-bold text-emerald-400 font-mono">0%</p>
+              </div>
+            </div>
+          </div>
+
+          <!-- Quick Action Buttons -->
+          <div class="mt-6 pt-4 border-t border-dbd-border/50 flex flex-wrap items-center justify-between gap-2 text-xs">
+            <button id="btn-select-all" class="text-gray-400 hover:text-white px-2.5 py-1.5 rounded bg-dbd-card hover:bg-dbd-border transition flex items-center gap-1 cursor-pointer">
+              <i data-lucide="check-check" class="w-3.5 h-3.5"></i> 全て完了
+            </button>
+            <button id="btn-unban-all" class="text-gray-400 hover:text-white px-2.5 py-1.5 rounded bg-dbd-card hover:bg-dbd-border transition flex items-center gap-1 cursor-pointer">
+              <i data-lucide="shield-check" class="w-3.5 h-3.5"></i> 全員を抽選対象に
+            </button>
+            <button id="btn-reset-all" class="text-dbd-red/90 hover:text-dbd-red px-2.5 py-1.5 rounded bg-dbd-card hover:bg-dbd-red/10 border border-dbd-red/20 transition flex items-center gap-1 cursor-pointer">
+              <i data-lucide="rotate-ccw" class="w-3.5 h-3.5"></i> 進捗全リセット
+            </button>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- Filter & Search Toolbar -->
+      <div class="bg-dbd-panel border border-dbd-border/80 rounded-xl p-4 shadow-md flex flex-col md:flex-row items-center justify-between gap-4">
+        <!-- Filter Tabs -->
+        <div class="flex items-center gap-1.5 w-full md:w-auto overflow-x-auto pb-1 md:pb-0">
+          <button data-filter="all" class="filter-tab px-3.5 py-1.5 rounded-lg text-xs font-semibold bg-dbd-red text-white transition cursor-pointer">
+            すべて (<span id="count-all">44</span>)
+          </button>
+          <button data-filter="remaining" class="filter-tab px-3.5 py-1.5 rounded-lg text-xs font-semibold bg-dbd-card text-gray-400 hover:text-white transition cursor-pointer">
+            未達成 (<span id="count-remaining">44</span>)
+          </button>
+          <button data-filter="completed" class="filter-tab px-3.5 py-1.5 rounded-lg text-xs font-semibold bg-dbd-card text-gray-400 hover:text-white transition cursor-pointer">
+            達成済み (<span id="count-completed">0</span>)
+          </button>
+          <button data-filter="banned" class="filter-tab px-3.5 py-1.5 rounded-lg text-xs font-semibold bg-dbd-card text-gray-400 hover:text-white transition cursor-pointer">
+            除外中 (<span id="count-banned">0</span>)
+          </button>
+        </div>
+
+        <!-- Search Input -->
+        <div class="relative w-full md:w-72">
+          <i data-lucide="search" class="w-4 h-4 text-dbd-muted absolute left-3 top-1/2 -translate-y-1/2"></i>
+          <input id="search-input" type="text" placeholder="キラー名で検索 (日 / 英)..." 
+                 class="w-full pl-9 pr-8 py-2 bg-dbd-card border border-dbd-border rounded-lg text-xs text-white placeholder-dbd-muted focus:outline-none focus:border-dbd-red transition">
+          <button id="search-clear-btn" class="absolute right-2.5 top-1/2 -translate-y-1/2 text-dbd-muted hover:text-white hidden cursor-pointer">
+            <i data-lucide="x" class="w-3.5 h-3.5"></i>
+          </button>
+        </div>
+      </div>
+
+      <!-- Killers Grid -->
+      <div id="killer-grid" class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3.5">
+        <!-- Rendered via JS -->
+      </div>
+
+      <div id="empty-state" class="hidden text-center py-16 bg-dbd-panel/50 rounded-2xl border border-dashed border-dbd-border">
+        <i data-lucide="search-x" class="w-12 h-12 text-dbd-muted mx-auto mb-3"></i>
+        <p class="text-base font-semibold text-gray-300">該当するキラーが見つかりません</p>
+        <p class="text-xs text-dbd-muted mt-1">検索ワードやフィルター条件を変更してください</p>
+      </div>
+
+      <!-- Footer Information / Notes Card -->
+      <footer class="mt-10 p-5 rounded-2xl bg-dbd-panel/80 border border-dbd-border/80 text-xs text-gray-400 space-y-2">
+        <div class="flex items-start gap-2.5">
+          <i data-lucide="sparkles" class="w-4 h-4 text-dbd-accent shrink-0 mt-0.5"></i>
+          <p class="leading-relaxed">
+            このサイトはAIを用いて作成しており、更新もAIを用いて行うため、時間がかかる場合があります。
+          </p>
+        </div>
+        <div class="flex items-start gap-2.5">
+          <i data-lucide="message-square" class="w-4 h-4 text-sky-400 shrink-0 mt-0.5"></i>
+          <p class="leading-relaxed">
+            サイトの不具合、要望などは管理人のTwitter(<a href="https://x.com/muja1027" target="_blank" rel="noopener noreferrer" class="text-sky-400 hover:text-sky-300 underline font-mono inline-flex items-center gap-1">https://x.com/muja1027<i data-lucide="external-link" class="w-3 h-3"></i></a>)まで送ってください。
+          </p>
+        </div>
+      </footer>
+
+    </section>
+
+    <!-- ========================================== -->
+    <!-- VIEW 2: 戦績分析・可視化 (ANALYTICS) -->
+    <!-- ========================================== -->
+    <section id="view-analytics" class="hidden space-y-6">
+
+      <!-- Overall Performance Overview Cards -->
+      <div class="grid grid-cols-2 sm:grid-cols-4 gap-4">
+        <div class="p-4 rounded-xl bg-dbd-panel border border-dbd-border">
+          <p class="text-xs text-dbd-muted font-medium">総試合数</p>
+          <p id="analytics-total-matches" class="text-2xl font-black text-white font-mono mt-1">0</p>
+        </div>
+        <div class="p-4 rounded-xl bg-dbd-panel border border-dbd-border">
+          <p class="text-xs text-dbd-muted font-medium">総勝利数</p>
+          <p id="analytics-total-wins" class="text-2xl font-black text-emerald-400 font-mono mt-1">0</p>
+        </div>
+        <div class="p-4 rounded-xl bg-dbd-panel border border-dbd-border">
+          <p class="text-xs text-dbd-muted font-medium">全体勝率</p>
+          <p id="analytics-win-rate" class="text-2xl font-black text-amber-400 font-mono mt-1">0.0%</p>
+        </div>
+        <div class="p-4 rounded-xl bg-dbd-panel border border-dbd-border">
+          <p class="text-xs text-dbd-muted font-medium">勝利までにかかった平均戦数</p>
+          <p id="analytics-avg-attempts" class="text-2xl font-black text-purple-400 font-mono mt-1">0.0 戦</p>
+        </div>
+      </div>
+
+      <!-- Charts Row -->
+      <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+        
+        <!-- Bar Chart: 勝利までの挑戦試合数 (8 cols) -->
+        <div class="lg:col-span-8 bg-dbd-panel border border-dbd-border rounded-2xl p-5">
+          <div class="flex items-center justify-between mb-4">
+            <div>
+              <h3 class="text-sm font-bold text-white flex items-center gap-2">
+                <i data-lucide="bar-chart-2" class="w-4 h-4 text-dbd-red"></i>
+                キラー別：勝利までにかかった試合数
+              </h3>
+              <p class="text-[11px] text-dbd-muted">1勝を挙げるのに何戦を要したかの可視化グラフ</p>
+            </div>
+            <button id="btn-chart-sort" class="text-xs px-2.5 py-1 rounded bg-dbd-card border border-dbd-border text-gray-300 hover:text-white transition cursor-pointer">
+              戦数降順でソート
+            </button>
+          </div>
+          <div class="relative h-72 sm:h-80 w-full">
+            <canvas id="chart-attempts"></canvas>
+          </div>
+        </div>
+
+        <!-- Doughnut Chart: 勝敗比率 (4 cols) -->
+        <div class="lg:col-span-4 bg-dbd-panel border border-dbd-border rounded-2xl p-5 flex flex-col justify-between">
+          <div>
+            <h3 class="text-sm font-bold text-white flex items-center gap-2 mb-1">
+              <i data-lucide="pie-chart" class="w-4 h-4 text-emerald-400"></i>
+              総合勝敗比率
+            </h3>
+            <p class="text-[11px] text-dbd-muted mb-4">全試合の勝敗バランス</p>
+            <div class="relative h-56 w-full flex items-center justify-center">
+              <canvas id="chart-ratio"></canvas>
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- Match History Log Table -->
+      <div class="bg-dbd-panel border border-dbd-border rounded-2xl p-5">
+        <h3 class="text-sm font-bold text-white flex items-center gap-2 mb-3">
+          <i data-lucide="history" class="w-4 h-4 text-amber-400"></i>
+          直近の対戦履歴ログ
+        </h3>
+        <div class="max-h-64 overflow-y-auto rounded-xl border border-dbd-border/80">
+          <table class="w-full text-xs text-left">
+            <thead class="bg-dbd-card text-dbd-muted uppercase text-[10px] sticky top-0 border-b border-dbd-border">
+              <tr>
+                <th class="px-4 py-2.5">#</th>
+                <th class="px-4 py-2.5">キラー</th>
+                <th class="px-4 py-2.5">結果</th>
+                <th class="px-4 py-2.5">累計対戦数</th>
+                <th class="px-4 py-2.5">日時</th>
+              </tr>
+            </thead>
+            <tbody id="match-history-table-body" class="divide-y divide-dbd-border/50 text-gray-300">
+              <!-- Rendered via JS -->
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Action Button at the very bottom -->
+      <div class="pt-2 pb-6 flex justify-end">
+        <button id="btn-clear-stats" class="px-4 py-2 rounded-xl bg-dbd-card hover:bg-rose-950/40 text-rose-400 border border-rose-900/40 text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer">
+          <i data-lucide="trash-2" class="w-4 h-4"></i>
+          戦績履歴をクリア
+        </button>
+      </div>
+
+    </section>
+
+    <!-- ========================================== -->
+    <!-- VIEW 3: アドオン抽選 (ADD-ONS) -->
+    <!-- ========================================== -->
+    <section id="view-addons" class="hidden space-y-6">
+
+      <div class="bg-dbd-panel border border-dbd-border/80 rounded-2xl p-5 sm:p-7 relative overflow-hidden">
+        <!-- Addon Control Header -->
+        <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-6 pb-5 border-b border-dbd-border">
+          <div>
+            <h2 class="text-base sm:text-lg font-bold text-white flex items-center gap-2">
+              <i data-lucide="sparkles" class="w-5 h-5 text-amber-400"></i>
+              アドオン 2枠スロット抽選
+            </h2>
+            <p class="text-xs text-dbd-muted mt-0.5">同一アドオンの同時被りなしで2つのアドオンをペア選出します</p>
+          </div>
+
+          <!-- Addon Duplicate Toggle -->
+          <div class="flex items-center gap-3 bg-dbd-card px-3.5 py-2 rounded-xl border border-dbd-border">
+            <span class="text-xs text-gray-300 font-medium">アドオン重複許可</span>
+            <label class="relative inline-flex items-center cursor-pointer">
+              <input type="checkbox" id="toggle-addon-duplicates" class="sr-only peer">
+              <div class="w-9 h-5 bg-gray-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-amber-500"></div>
+            </label>
+          </div>
+        </div>
+
+        <!-- Target Killer Selector Dropdown -->
+        <div class="flex flex-wrap items-center gap-3 mb-6 bg-dbd-dark/60 p-3.5 rounded-xl border border-dbd-border">
+          <label class="text-xs font-bold text-gray-300 flex items-center gap-1.5">
+            <i data-lucide="user-check" class="w-4 h-4 text-dbd-red"></i>
+            対象キラー:
+          </label>
+          <select id="addon-killer-select" class="bg-dbd-card text-white text-xs font-semibold px-3 py-2 rounded-lg border border-dbd-border focus:outline-none focus:border-dbd-red cursor-pointer">
+            <!-- Populated via JS -->
+          </select>
+          <button id="btn-sync-addon-killer" class="text-xs px-3 py-2 rounded-lg bg-dbd-card hover:bg-dbd-border text-gray-300 hover:text-white border border-dbd-border transition flex items-center gap-1 cursor-pointer">
+            <i data-lucide="refresh-cw" class="w-3.5 h-3.5"></i> 当選キラーに合わせる
+          </button>
+        </div>
+
+        <!-- 2 Addon Slots -->
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">
+          <!-- Slot 1 -->
+          <div id="addon-slot-1" class="bg-dbd-dark rounded-2xl border-2 border-dbd-border p-5 text-center min-h-[140px] flex flex-col justify-between items-center transition-all">
+            <span class="text-[10px] font-mono text-amber-400 font-bold uppercase tracking-wider">Slot #1</span>
+            <div class="my-auto py-2">
+              <span id="addon-rarity-1" class="text-[9px] px-2 py-0.5 rounded-full bg-gray-800 text-gray-400 font-bold uppercase tracking-wider">Common</span>
+              <h3 id="addon-name-1" class="text-lg font-black text-white mt-1.5">未抽選</h3>
+            </div>
+          </div>
+          <!-- Slot 2 -->
+          <div id="addon-slot-2" class="bg-dbd-dark rounded-2xl border-2 border-dbd-border p-5 text-center min-h-[140px] flex flex-col justify-between items-center transition-all">
+            <span class="text-[10px] font-mono text-amber-400 font-bold uppercase tracking-wider">Slot #2</span>
+            <div class="my-auto py-2">
+              <span id="addon-rarity-2" class="text-[9px] px-2 py-0.5 rounded-full bg-gray-800 text-gray-400 font-bold uppercase tracking-wider">Common</span>
+              <h3 id="addon-name-2" class="text-lg font-black text-white mt-1.5">未抽選</h3>
+            </div>
+          </div>
+        </div>
+
+        <!-- Spin Addons Trigger Button -->
+        <div class="flex items-center gap-3">
+          <button id="btn-spin-addons" class="flex-1 py-3.5 rounded-xl bg-gradient-to-r from-amber-600 to-amber-500 hover:brightness-110 text-white font-bold text-sm tracking-wider flex items-center justify-center gap-2 shadow-lg shadow-amber-900/30 transition cursor-pointer">
+            <i data-lucide="dices" class="w-5 h-5"></i>
+            <span>アドオンを2つ抽選する</span>
+          </button>
+          <button id="btn-reset-addons-pool" title="使用済みアドオンをすべて復活" class="px-4 py-3.5 rounded-xl bg-dbd-card hover:bg-dbd-border text-gray-300 border border-dbd-border text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer">
+            <i data-lucide="rotate-ccw" class="w-4 h-4"></i> プール全復活
+          </button>
+        </div>
+      </div>
+
+      <!-- Addon Catalog for Selected Killer -->
+      <div class="bg-dbd-panel border border-dbd-border rounded-2xl p-5">
+        <h3 class="text-sm font-bold text-white mb-3 flex items-center gap-2">
+          <i data-lucide="book-open" class="w-4 h-4 text-amber-400"></i>
+          <span id="addon-catalog-title">アドオンカタログ</span>
+        </h3>
+        <div id="addon-catalog-grid" class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-2.5">
+          <!-- Rendered via JS -->
+        </div>
+      </div>
+
+    </section>
+
+    <!-- ========================================== -->
+    <!-- VIEW 4: パーク抽選 (PERKS) 全145種 (英語名なし) -->
+    <!-- ========================================== -->
+    <section id="view-perks" class="hidden space-y-6">
+
+      <div class="bg-dbd-panel border border-dbd-border/80 rounded-2xl p-5 sm:p-7 relative overflow-hidden">
+        <!-- Perk Header & Duplicate Switch -->
+        <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-6 pb-5 border-b border-dbd-border">
+          <div>
+            <h2 class="text-base sm:text-lg font-bold text-white flex items-center gap-2">
+              <i data-lucide="shield" class="w-5 h-5 text-purple-400"></i>
+              キラーパーク 4枠スロット
+            </h2>
+            <p class="text-xs text-dbd-muted mt-0.5">全145種のキラーパークから重複なしで4つを同時選出します</p>
+          </div>
+
+          <!-- Perk Duplicate Toggle Switch -->
+          <div class="flex items-center gap-3 bg-dbd-card px-3.5 py-2 rounded-xl border border-dbd-border">
+            <span class="text-xs text-gray-300 font-medium">パーク重複許可</span>
+            <label class="relative inline-flex items-center cursor-pointer">
+              <input type="checkbox" id="toggle-perk-duplicates" class="sr-only peer">
+              <div class="w-9 h-5 bg-gray-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-purple-600"></div>
+            </label>
+          </div>
+        </div>
+
+        <div class="flex items-center justify-between mb-4">
+          <div class="flex items-center gap-2">
+            <span class="w-2.5 h-2.5 rounded-full bg-purple-500 animate-ping"></span>
+            <span class="text-xs font-bold uppercase tracking-widest text-gray-400">4-PERK LOADOUT SELECTOR</span>
+          </div>
+          <span id="perk-pool-count" class="text-xs bg-dbd-card px-2.5 py-1 rounded border border-dbd-border text-gray-300 font-mono">
+            抽選プール: 145 / 145 個
+          </span>
+        </div>
+
+        <!-- 4 Slots Grid -->
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+          <!-- Slot 1 -->
+          <div id="perk-slot-1" class="bg-dbd-dark rounded-2xl border-2 border-dbd-border p-5 flex flex-col justify-between items-center min-h-[160px] transition-all relative overflow-hidden">
+            <div class="flex items-center justify-between w-full">
+              <span class="text-[10px] font-mono text-purple-400 font-bold">Slot #1</span>
+              <span id="perk-owner-badge-1" class="text-[9px] px-2 py-0.5 rounded-full bg-dbd-card text-dbd-muted border border-dbd-border font-bold">共通/固有</span>
+            </div>
+            <div class="my-auto py-2 text-center">
+              <div class="w-10 h-10 rounded-xl bg-purple-950/30 border border-purple-500/30 flex items-center justify-center mx-auto mb-2 text-purple-400">
+                <i data-lucide="shield" class="w-5 h-5"></i>
+              </div>
+              <h3 id="perk-name-1" class="text-sm sm:text-base font-black text-white">未抽選</h3>
+            </div>
+          </div>
+          <!-- Slot 2 -->
+          <div id="perk-slot-2" class="bg-dbd-dark rounded-2xl border-2 border-dbd-border p-5 flex flex-col justify-between items-center min-h-[160px] transition-all relative overflow-hidden">
+            <div class="flex items-center justify-between w-full">
+              <span class="text-[10px] font-mono text-purple-400 font-bold">Slot #2</span>
+              <span id="perk-owner-badge-2" class="text-[9px] px-2 py-0.5 rounded-full bg-dbd-card text-dbd-muted border border-dbd-border font-bold">共通/固有</span>
+            </div>
+            <div class="my-auto py-2 text-center">
+              <div class="w-10 h-10 rounded-xl bg-purple-950/30 border border-purple-500/30 flex items-center justify-center mx-auto mb-2 text-purple-400">
+                <i data-lucide="shield" class="w-5 h-5"></i>
+              </div>
+              <h3 id="perk-name-2" class="text-sm sm:text-base font-black text-white">未抽選</h3>
+            </div>
+          </div>
+          <!-- Slot 3 -->
+          <div id="perk-slot-3" class="bg-dbd-dark rounded-2xl border-2 border-dbd-border p-5 flex flex-col justify-between items-center min-h-[160px] transition-all relative overflow-hidden">
+            <div class="flex items-center justify-between w-full">
+              <span class="text-[10px] font-mono text-purple-400 font-bold">Slot #3</span>
+              <span id="perk-owner-badge-3" class="text-[9px] px-2 py-0.5 rounded-full bg-dbd-card text-dbd-muted border border-dbd-border font-bold">共通/固有</span>
+            </div>
+            <div class="my-auto py-2 text-center">
+              <div class="w-10 h-10 rounded-xl bg-purple-950/30 border border-purple-500/30 flex items-center justify-center mx-auto mb-2 text-purple-400">
+                <i data-lucide="shield" class="w-5 h-5"></i>
+              </div>
+              <h3 id="perk-name-3" class="text-sm sm:text-base font-black text-white">未抽選</h3>
+            </div>
+          </div>
+          <!-- Slot 4 -->
+          <div id="perk-slot-4" class="bg-dbd-dark rounded-2xl border-2 border-dbd-border p-5 flex flex-col justify-between items-center min-h-[160px] transition-all relative overflow-hidden">
+            <div class="flex items-center justify-between w-full">
+              <span class="text-[10px] font-mono text-purple-400 font-bold">Slot #4</span>
+              <span id="perk-owner-badge-4" class="text-[9px] px-2 py-0.5 rounded-full bg-dbd-card text-dbd-muted border border-dbd-border font-bold">共通/固有</span>
+            </div>
+            <div class="my-auto py-2 text-center">
+              <div class="w-10 h-10 rounded-xl bg-purple-950/30 border border-purple-500/30 flex items-center justify-center mx-auto mb-2 text-purple-400">
+                <i data-lucide="shield" class="w-5 h-5"></i>
+              </div>
+              <h3 id="perk-name-4" class="text-sm sm:text-base font-black text-white">未抽選</h3>
+            </div>
+          </div>
+        </div>
+
+        <!-- Spin Perks Trigger Button -->
+        <div class="flex items-center gap-3">
+          <button id="btn-spin-perks" class="flex-1 py-3.5 rounded-xl bg-gradient-to-r from-purple-700 to-purple-600 hover:brightness-110 text-white font-bold text-sm tracking-wider flex items-center justify-center gap-2 shadow-lg shadow-purple-900/30 transition cursor-pointer">
+            <i data-lucide="dices" class="w-5 h-5"></i>
+            <span>パークを4つ抽選する</span>
+          </button>
+          <button id="btn-reset-perks-pool" title="使用済みパークをすべて復活" class="px-4 py-3.5 rounded-xl bg-dbd-card hover:bg-dbd-border text-gray-300 border border-dbd-border text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer">
+            <i data-lucide="rotate-ccw" class="w-4 h-4"></i> パーク全復活
+          </button>
+        </div>
+      </div>
+
+      <!-- Perk Catalog & Filter Area -->
+      <div class="bg-dbd-panel border border-dbd-border rounded-2xl p-5">
+        <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 mb-4">
+          <div>
+            <h3 class="text-sm font-bold text-white flex items-center gap-2">
+              <i data-lucide="list-filter" class="w-4 h-4 text-purple-400"></i>
+              全キラーパーク カタログ (全145種・日本語名称)
+            </h3>
+            <p class="text-[11px] text-dbd-muted">※チェックのON/OFFで個別に抽選対象から除外可能</p>
+          </div>
+          
+          <div class="relative w-full sm:w-64">
+            <i data-lucide="search" class="w-3.5 h-3.5 text-dbd-muted absolute left-3 top-1/2 -translate-y-1/2"></i>
+            <input id="perk-search-input" type="text" placeholder="パーク名・キラー名で検索..." 
+                   class="w-full pl-8 pr-3 py-1.5 bg-dbd-card border border-dbd-border rounded-lg text-xs text-white placeholder-dbd-muted focus:outline-none focus:border-purple-500 transition">
+          </div>
+        </div>
+
+        <div id="perk-catalog-grid" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-2.5 max-h-[500px] overflow-y-auto pr-1">
+          <!-- Rendered via JS -->
+        </div>
+      </div>
+
+    </section>
+
+  </main>
+
+  <!-- Global Confirm Modal -->
+  <div id="confirm-modal" class="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden">
+    <div class="bg-dbd-panel border border-dbd-border rounded-2xl max-w-sm w-full p-6 text-center shadow-2xl">
+      <div class="w-12 h-12 rounded-full bg-dbd-red/20 text-dbd-red flex items-center justify-center mx-auto mb-4 border border-dbd-red/40">
+        <i data-lucide="alert-triangle" class="w-6 h-6"></i>
+      </div>
+      <h3 id="modal-title" class="text-lg font-bold text-white mb-2">確認</h3>
+      <p id="modal-desc" class="text-xs text-dbd-muted mb-6 leading-relaxed">操作を続行しますか？</p>
+      <div class="flex items-center justify-center gap-3">
+        <button id="modal-btn-cancel" class="flex-1 py-2 rounded-lg bg-dbd-card hover:bg-dbd-border text-gray-300 text-xs font-semibold transition cursor-pointer">
+          キャンセル
+        </button>
+        <button id="modal-btn-confirm" class="flex-1 py-2 rounded-lg bg-dbd-red hover:bg-dbd-redHover text-white text-xs font-semibold transition cursor-pointer">
+          実行する
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Application Logic -->
+  <script>
+    // 1. 全44キラー完全ロスター (ver.10.2.2)
+    const KILLER_ROSTER = [
+      { id: 'trapper', ja: 'トラッパー', en: 'The Trapper', title: 'Evan MacMillan', dlc: 'Original' },
+      { id: 'wraith', ja: 'レイス', en: 'The Wraith', title: 'Philip Ojomo', dlc: 'Original' },
+      { id: 'hillbilly', ja: 'ヒルビリー', en: 'The Hillbilly', title: 'Max Thompson Jr.', dlc: 'Original' },
+      { id: 'nurse', ja: 'ナース', en: 'The Nurse', title: 'Sally Smithson', dlc: 'The Last Breath' },
+      { id: 'shape', ja: 'シェイプ (マイケル)', en: 'The Shape', title: 'Michael Myers', dlc: 'Halloween' },
+      { id: 'hag', ja: 'ハグ', en: 'The Hag', title: 'Lisa Sherwood', dlc: 'Of Flesh and Mud' },
+      { id: 'doctor', ja: 'ドクター', en: 'The Doctor', title: 'Herman Carter', dlc: 'Spark of Madness' },
+      { id: 'huntress', ja: 'ハントレス', en: 'The Huntress', title: 'Anna', dlc: 'A Lullaby for the Dark' },
+      { id: 'cannibal', ja: 'カニバル (レザーフェイス)', en: 'The Cannibal', title: 'Bubba Sawyer', dlc: 'Texas Chainsaw' },
+      { id: 'nightmare', ja: 'ナイトメア (フレディ)', en: 'The Nightmare', title: 'Freddy Krueger', dlc: 'A Nightmare on Elm St' },
+      { id: 'pig', ja: 'ピッグ (アマンダ)', en: 'The Pig', title: 'Amanda Young', dlc: 'SAW' },
+      { id: 'clown', ja: 'クラウン', en: 'The Clown', title: 'Kenneth Chase', dlc: 'Curtain Call' },
+      { id: 'spirit', ja: 'スピリット (山岡凛)', en: 'The Spirit', title: 'Rin Yamaoka', dlc: 'Shattered Bloodline' },
+      { id: 'legion', ja: 'リージョン', en: 'The Legion', title: 'Frank, Julie, Susie, Joey', dlc: 'Darkness Among Us' },
+      { id: 'plague', ja: 'プレイグ', en: 'The Plague', title: 'Adiris', dlc: 'Demise of the Faithful' },
+      { id: 'ghostface', ja: 'ゴーストフェイス', en: 'The Ghost Face', title: 'Danny Johnson', dlc: 'Ghost Face' },
+      { id: 'demogorgon', ja: 'デモゴルゴン', en: 'The Demogorgon', title: 'The Monster', dlc: 'Stranger Things' },
+      { id: 'oni', ja: '鬼 (山岡崋山)', en: 'The Oni', title: 'Kazan Yamaoka', dlc: 'Cursed Legacy' },
+      { id: 'deathslinger', ja: 'デススリンガー', en: 'The Deathslinger', title: 'Caleb Quinn', dlc: 'Chains of Hate' },
+      { id: 'executioner', ja: 'エクセキューショナー (三角頭)', en: 'The Executioner', title: 'Pyramid Head', dlc: 'Silent Hill' },
+      { id: 'blight', ja: 'ブライト', en: 'The Blight', title: 'Talbot Grimes', dlc: 'Descend Beyond' },
+      { id: 'twins', ja: 'ツインズ', en: 'The Twins', title: 'Charlotte & Victor', dlc: 'A Binding of Kin' },
+      { id: 'trickster', ja: 'トリックスター', en: 'The Trickster', title: 'Ji-Woon Hak', dlc: 'All-Kill' },
+      { id: 'nemesis', ja: 'ネメシス', en: 'The Nemesis', title: 'Nemesis T-Type', dlc: 'Resident Evil' },
+      { id: 'cenobite', ja: 'セノバイト (ピンヘッド)', en: 'The Cenobite', title: 'Elliot Spencer', dlc: 'Hellraiser' },
+      { id: 'artist', ja: 'アーティスト', en: 'The Artist', title: 'Carmina Mora', dlc: 'Portrait of a Murder' },
+      { id: 'onryo', ja: '怨霊 (貞子)', en: 'The Onryō', title: 'Sadako Yamamura', dlc: 'Sadako Rising' },
+      { id: 'dredge', ja: 'ドレッジ', en: 'The Dredge', title: 'The Manifestation', dlc: 'Roots of Dread' },
+      { id: 'mastermind', ja: 'マスターマインド (ウェスカー)', en: 'The Mastermind', title: 'Albert Wesker', dlc: 'PROJECT W' },
+      { id: 'knight', ja: 'ナイト', en: 'The Knight', title: 'Tarhos Kovács', dlc: 'Forged in Fog' },
+      { id: 'merchant', ja: 'スカルマーチャント', en: 'The Skull Merchant', title: 'Adriana Imai', dlc: 'Tools of Torment' },
+      { id: 'singularity', ja: 'シンギュラリティ', en: 'The Singularity', title: 'HUX-A7', dlc: 'End Transmission' },
+      { id: 'xenomorph', ja: 'ゼノモーフ', en: 'The Perfect Organism', dlc: 'Alien' },
+      { id: 'goodguy', ja: 'グッドガイ (チャッキー)', en: 'The Good Guy', title: 'Charles Lee Ray', dlc: 'Chucky' },
+      { id: 'unknown', ja: 'アンノウン', en: 'The Unknown', title: 'The Evil Legend', dlc: 'All Things Wicked' },
+      { id: 'lich', ja: 'リッチ (ベクナ)', en: 'The Lich', title: 'Vecna', dlc: 'Dungeons & Dragons' },
+      { id: 'darklord', ja: 'ダークロード (ドラキュラ)', en: 'The Dark Lord', title: 'Dracula', dlc: 'Castlevania' },
+      { id: 'houndmaster', ja: 'ハウンドマスター', en: 'The Houndmaster', title: 'Portia Maye', dlc: 'Doomed Course' },
+      { id: 'ghoul', ja: 'グール', en: 'The Ghoul', title: 'Ken Kaneki', dlc: 'Tokyo Ghoul' },
+      { id: 'animatronic', ja: 'アニマトロニック', en: 'The Animatronic', title: 'Springtrap', dlc: "Five Nights at Freddy's" },
+      { id: 'gasu', ja: 'ガスー', en: 'The Gasu', title: 'Gasu', dlc: 'Chapter' },
+      { id: 'first', ja: 'ファースト', en: 'The First', title: 'The First', dlc: 'Chapter' },
+      { id: 'jason', ja: 'ジェイソン', en: 'The Jason', title: 'Jason Voorhees', dlc: 'Friday the 13th' },
+      { id: 'judgment', ja: 'ジャッジメント', en: 'The Judgment', title: 'The Judge', dlc: 'Original' }
+    ];
+
+    // 2. パーク全145種 データベース (英語名なし・空欄除外・ユーザー指定の修正済み名称)
+    const KILLER_PERKS_DB = [
+      { id: 'p_com_1', ja: '苦悶の根源', owner: '共通' },
+      { id: 'p_com_2', ja: '忍び寄る者', owner: '共通' },
+      { id: 'p_com_3', ja: '誰も死から逃れられない (NOED)', owner: '共通' },
+      { id: 'p_com_4', ja: '囁き', owner: '共通' },
+      { id: 'p_com_5', ja: '憎悪の呟き', owner: '共通' },
+      { id: 'p_com_6', ja: 'ずさんな肉屋', owner: '共通' },
+      { id: 'p_com_7', ja: '狡猾', owner: '共通' },
+      { id: 'p_com_8', ja: '無慈悲', owner: '共通' },
+      { id: 'p_com_9', ja: '鋼の握力', owner: '共通' },
+      { id: 'p_com_10', ja: '呪術：狩りの興奮', owner: '共通' },
+      { id: 'p_com_11', ja: '異形の祭壇', owner: '共通' },
+      { id: 'p_com_12', ja: '影の密偵', owner: '共通' },
+      { id: 'p_com_16', ja: '打ち砕かれた希望', owner: '共通' },
+      { id: 'p_tr_1', ja: '不安の元凶', owner: 'トラッパー' },
+      { id: 'p_tr_2', ja: '野蛮な力', owner: 'トラッパー' },
+      { id: 'p_tr_3', ja: '興奮', owner: 'トラッパー' },
+      { id: 'p_wr_1', ja: '捕食者', owner: 'レイス' },
+      { id: 'p_wr_2', ja: '血の追跡者', owner: 'レイス' },
+      { id: 'p_wr_3', ja: '闇より出でし者', owner: 'レイス' },
+      { id: 'p_hb_1', ja: '不屈', owner: 'ヒルビリー' },
+      { id: 'p_hb_2', ja: '光より出でし者', owner: 'ヒルビリー' },
+      { id: 'p_hb_3', ja: 'ガラクタいじり', owner: 'ヒルビリー' },
+      { id: 'p_nu_1', ja: '喘鳴', owner: 'ナース' },
+      { id: 'p_nu_2', ja: '死恐怖症', owner: 'ナース' },
+      { id: 'p_nu_3', ja: '看護婦の使命', owner: 'ナース' },
+      { id: 'p_sh_1', ja: '最後のお楽しみ', owner: 'シェイプ' },
+      { id: 'p_sh_2', ja: '弄ばれる獲物(逃げられてもいい)', owner: 'シェイプ' },
+      { id: 'p_sh_3', ja: '消えゆく灯火', owner: 'シェイプ' },
+      { id: 'p_hg_1', ja: '呪術：第三の封印', owner: 'ハグ' },
+      { id: 'p_hg_2', ja: '呪術：破滅', owner: 'ハグ' },
+      { id: 'p_hg_3', ja: '呪術：貪られる希望', owner: 'ハグ' },
+      { id: 'p_dc_1', ja: '圧倒的存在感', owner: 'ドクター' },
+      { id: 'p_dc_2', ja: '観察&虐待', owner: 'ドクター' },
+      { id: 'p_dc_3', ja: 'オーバーチャージ', owner: 'ドクター' },
+      { id: 'p_ht_1', ja: '縄張り意識', owner: 'ハントレス' },
+      { id: 'p_ht_2', ja: '猛獣', owner: 'ハントレス' },
+      { id: 'p_ht_3', ja: '女狩人の子守歌', owner: 'ハントレス' },
+      { id: 'p_cb_1', ja: 'ノックアウト', owner: 'カニバル' },
+      { id: 'p_cb_2', ja: 'バーベキュー＆チリ', owner: 'カニバル' },
+      { id: 'p_cb_3', ja: 'フランクリンの悲劇', owner: 'カニバル' },
+      { id: 'p_nm_1', ja: 'ファイヤー・アップ', owner: 'ナイトメア' },
+      { id: 'p_nm_2', ja: 'リメンバー・ミー', owner: 'ナイトメア' },
+      { id: 'p_nm_3', ja: '血の番人', owner: 'ナイトメア' },
+      { id: 'p_pg_1', ja: '監視', owner: 'ピッグ' },
+      { id: 'p_pg_2', ja: '選択は君次第だ', owner: 'ピッグ' },
+      { id: 'p_pg_3', ja: '処刑人の妙技', owner: 'ピッグ' },
+      { id: 'p_cl_1', ja: 'まやかし', owner: 'クラウン' },
+      { id: 'p_cl_2', ja: 'ピエロ恐怖症', owner: 'クラウン' },
+      { id: 'p_cl_3', ja: 'イタチが飛び出した', owner: 'クラウン' },
+      { id: 'p_sp_1', ja: '怨霊の怒り', owner: 'スピリット' },
+      { id: 'p_sp_2', ja: '呪術：霊障の地', owner: 'スピリット' },
+      { id: 'p_sp_3', ja: '怨恨', owner: 'スピリット' },
+      { id: 'p_lg_1', ja: '不協和音', owner: 'リージョン' },
+      { id: 'p_lg_2', ja: '狂気の根性', owner: 'リージョン' },
+      { id: 'p_lg_3', ja: 'アイアンメイデン', owner: 'リージョン' },
+      { id: 'p_pl_1', ja: '堕落の介入', owner: 'プレイグ' },
+      { id: 'p_pl_2', ja: '伝染する恐怖', owner: 'プレイグ' },
+      { id: 'p_pl_3', ja: '闇の信仰心', owner: 'プレイグ' },
+      { id: 'p_gf_1', ja: '地獄耳', owner: 'ゴーストフェイス' },
+      { id: 'p_gf_2', ja: '戦慄', owner: 'ゴーストフェイス' },
+      { id: 'p_gf_3', ja: '隠密の追跡', owner: 'ゴーストフェイス' },
+      { id: 'p_dg_1', ja: 'サージ', owner: 'デモゴルゴン' },
+      { id: 'p_dg_2', ja: 'マインドブレイカー', owner: 'デモゴルゴン' },
+      { id: 'p_dg_3', ja: '無慈悲の極致(閉所恐怖症)', owner: 'デモゴルゴン' },
+      { id: 'p_on_1', ja: '残心の戦術', owner: '鬼' },
+      { id: 'p_on_2', ja: '血の共鳴', owner: '鬼' },
+      { id: 'p_on_3', ja: '天誅', owner: '鬼' },
+      { id: 'p_ds_1', ja: '変速機', owner: 'デススリンガー' },
+      { id: 'p_ds_2', ja: '死人のスイッチ', owner: 'デススリンガー' },
+      { id: 'p_ds_3', ja: '呪術：報復', owner: 'デススリンガー' },
+      { id: 'p_ex_1', ja: '強制苦行', owner: 'エクセキューショナー' },
+      { id: 'p_ex_2', ja: '煩悶のトレイル', owner: 'エクセキューショナー' },
+      { id: 'p_ex_3', ja: 'デスバウンド', owner: 'エクセキューショナー' },
+      { id: 'p_bl_1', ja: 'ドラゴンの掌握', owner: 'ブライト' },
+      { id: 'p_bl_2', ja: '呪術：不死', owner: 'ブライト' },
+      { id: 'p_bl_3', ja: '呪術：血の恩恵', owner: 'ブライト' },
+      { id: 'p_tw_1', ja: '溜め込み屋', owner: 'ツインズ' },
+      { id: 'p_tw_2', ja: '迫害', owner: 'ツインズ' },
+      { id: 'p_tw_3', ja: 'とどめの一撃', owner: 'ツインズ' },
+      { id: 'p_tk_1', ja: 'スターに憧れて', owner: 'トリックスター' },
+      { id: 'p_tk_2', ja: '呪術：クラウドコントロール', owner: 'トリックスター' },
+      { id: 'p_tk_3', ja: '袋小路', owner: 'トリックスター' },
+      { id: 'p_nm2_1', ja: '死を呼ぶ追跡者', owner: 'ネメシス' },
+      { id: 'p_nm2_2', ja: '集団ヒステリー', owner: 'ネメシス' },
+      { id: 'p_nm2_3', ja: 'イラプション', owner: 'ネメシス' },
+      { id: 'p_cn_1', ja: 'デッドロック', owner: 'セノバイト' },
+      { id: 'p_cn_2', ja: '呪術：玩具', owner: 'セノバイト' },
+      { id: 'p_cn_3', ja: '悶絶のフック：苦痛という名の賜り物', owner: 'セノバイト' },
+      { id: 'p_ar_1', ja: '不吉な包囲', owner: 'アーティスト' },
+      { id: 'p_ar_2', ja: '呪術：ペンティメント', owner: 'アーティスト' },
+      { id: 'p_ar_3', ja: '悶絶のフック：共鳴する苦痛', owner: 'アーティスト' },
+      { id: 'p_or_1', ja: '悶絶のフック：氾濫する怒り', owner: '怨霊' },
+      { id: 'p_or_2', ja: '怒涛の嵐', owner: '怨霊' },
+      { id: 'p_or_3', ja: '海の呼び声', owner: '怨霊' },
+      { id: 'p_dr_1', ja: '解体', owner: 'ドレッジ' },
+      { id: 'p_dr_2', ja: '腐敗の気配', owner: 'ドレッジ' },
+      { id: 'p_dr_3', ja: '露見する闇', owner: 'ドレッジ' },
+      { id: 'p_mm_1', ja: '終末期', owner: 'マスターマインド' },
+      { id: 'p_mm_2', ja: '知覚覚醒', owner: 'マスターマインド' },
+      { id: 'p_mm_3', ja: '人体の超越', owner: 'マスターマインド' },
+      { id: 'p_kn_1', ja: '隠れ場なし', owner: 'ナイト' },
+      { id: 'p_kn_2', ja: '呪術：闇との対面', owner: 'ナイト' },
+      { id: 'p_kn_3', ja: 'ヒュブリス', owner: 'ナイト' },
+      { id: 'p_sm_1', ja: 'バシッ！', owner: 'スカルマーチャント' },
+      { id: 'p_sm_2', ja: '骨抜きの作用', owner: 'スカルマーチャント' },
+      { id: 'p_sm_3', ja: '執拗な狩り', owner: 'スカルマーチャント' },
+      { id: 'p_sg_1', ja: '遺伝的限界', owner: 'シンギュラリティ' },
+      { id: 'p_sg_2', ja: '躊躇の強制', owner: 'シンギュラリティ' },
+      { id: 'p_sg_3', ja: '機械学習', owner: 'シンギュラリティ' },
+      { id: 'p_xm_1', ja: '究極の武器', owner: 'ゼノモーフ' },
+      { id: 'p_xm_2', ja: '素早い残虐行為', owner: 'ゼノモーフ' },
+      { id: 'p_xm_3', ja: 'エイリアンの本能', owner: 'ゼノモーフ' },
+      { id: 'p_gg_1', ja: '電池付き', owner: 'グッドガイ' },
+      { id: 'p_gg_2', ja: '死ぬまで親友', owner: 'グッドガイ' },
+      { id: 'p_gg_3', ja: '呪術：二人遊び', owner: 'グッドガイ' },
+      { id: 'p_un_1', ja: 'アンバウンド', owner: 'アンノウン' },
+      { id: 'p_un_2', ja: 'アンフォーシーン', owner: 'アンノウン' },
+      { id: 'p_un_3', ja: 'アンダン', owner: 'アンノウン' },
+      { id: 'p_lc_1', ja: '闇の慢心', owner: 'リッチ' },
+      { id: 'p_lc_2', ja: '倦怠感', owner: 'リッチ' },
+      { id: 'p_lc_3', ja: '同調', owner: 'リッチ' },
+      { id: 'p_dl_1', ja: '人間の欲', owner: 'ダークロード' },
+      { id: 'p_dl_2', ja: '呪術：悲惨な運命', owner: 'ダークロード' },
+      { id: 'p_dl_3', ja: '支配', owner: 'ダークロード' },
+      { id: 'p_hm_1', ja: '天地を揺るがす雷', owner: 'ハウンドマスター' },
+      { id: 'p_hm_2', ja: '悶絶のフック：不規則なコンパス', owner: 'ハウンドマスター' },
+      { id: 'p_hm_3', ja: '容赦なし', owner: 'ハウンドマスター' },
+      { id: 'p_gh_1', ja: '切れない縁', owner: 'グール' },
+      { id: 'p_gh_2', ja: '生き地獄', owner: 'グール' },
+      { id: 'p_gh_3', ja: '誰も自由ではない', owner: 'グール' },
+      { id: 'p_an_1', ja: '幻影の震撼', owner: 'アニマトロニック' },
+      { id: 'p_an_2', ja: '従業員募集中', owner: 'アニマトロニック' },
+      { id: 'p_an_3', ja: '誤作動', owner: 'アニマトロニック' },
+      { id: 'p_gs_1', ja: '破滅の序曲', owner: 'ガスー' },
+      { id: 'p_gs_2', ja: '泳ぐ目', owner: 'ガスー' },
+      { id: 'p_gs_3', ja: '貪欲', owner: 'ガスー' },
+      { id: 'p_fs_1', ja: 'ハイブマインド', owner: 'ファースト' },
+      { id: 'p_fs_2', ja: '時間の逆行', owner: 'ファースト' },
+      { id: 'p_fs_3', ja: '極秘プロジェクト', owner: 'ファースト' },
+      { id: 'p_js_1', ja: '死ぬほど怖い', owner: 'ジェイソン' },
+      { id: 'p_js_2', ja: '大暴れ', owner: 'ジェイソン' },
+      { id: 'p_js_3', ja: '物言わぬ影', owner: 'ジェイソン' },
+      { id: 'p_jd_1', ja: '支配下', owner: 'ジャッジメント' },
+      { id: 'p_jd_2', ja: '損壊', owner: 'ジャッジメント' },
+      { id: 'p_jd_3', ja: '天界の証人', owner: 'ジャッジメント' }
+    ];
+
+    // 3. 全44キラー固有アドオン完全データベース
+    const KILLER_ADDONS_DB = {
+      trapper: [
+        { name: '血まみれのコイル', rarity: 'ultra' }, { name: '玉虫色の石', rarity: 'ultra' },
+        { name: '張り詰めたばね', rarity: 'very-rare' }, { name: '油まみれのコイル', rarity: 'very-rare' },
+        { name: '砥石', rarity: 'very-rare' }, { name: '罠用袋', rarity: 'very-rare' },
+        { name: 'タールのボトル', rarity: 'rare' }, { name: 'トラッパーのバッグ', rarity: 'rare' },
+        { name: '締め具', rarity: 'rare' }, { name: '補助コイル', rarity: 'rare' },
+        { name: '錆びた歯', rarity: 'rare' },
+        { name: '4コイルのスプリングキット', rarity: 'uncommon' }, { name: 'ギザギザした歯', rarity: 'uncommon' },
+        { name: 'コーヒーかす', rarity: 'uncommon' }, { name: 'ワックスのブロック', rarity: 'uncommon' },
+        { name: '長鋸歯', rarity: 'uncommon' },
+        { name: 'トラッパーのグローブ', rarity: 'common' }, { name: 'パッド付きの歯', rarity: 'common' },
+        { name: '熊の油', rarity: 'common' }, { name: '間に合わせのサポーター', rarity: 'common' }
+      ],
+      wraith: [
+        { name: '音無しの鳴子', rarity: 'ultra' }, { name: '「全能視」- 魂', rarity: 'ultra' },
+        { name: '「暴風」- 血', rarity: 'very-rare' }, { name: '「俊足の狩人」- 血', rarity: 'very-rare' },
+        { name: '「影舞」- 血', rarity: 'very-rare' }, { name: '「全能視」- 血', rarity: 'very-rare' },
+        { name: '「影舞」- 白', rarity: 'rare' }, { name: '「暴風」- 白', rarity: 'rare' },
+        { name: '「俊足の狩人」- 白', rarity: 'rare' }, { name: '「ブリンク」- 白', rarity: 'rare' },
+        { name: '「盲目の戦士」- 白', rarity: 'rare' },
+        { name: '「暴風」- 泥', rarity: 'uncommon' }, { name: '「ブリンク」- 泥', rarity: 'uncommon' },
+        { name: '「俊足の狩人」- 泥', rarity: 'uncommon' }, { name: '「盲目の戦士」- 泥', rarity: 'uncommon' },
+        { name: '骨の鳴子', rarity: 'uncommon' },
+        { name: '「蛇」- 煤', rarity: 'common' }, { name: '「猟犬」- 煤', rarity: 'common' },
+        { name: '「亡霊」- 煤', rarity: 'common' }, { name: '「暗獣」- 煤', rarity: 'common' }
+      ],
+      hillbilly: [
+        { name: '玉虫色の彫刻', rarity: 'ultra' }, { name: '同調済みのキャブレター', rarity: 'ultra' },
+        { name: '頂点のマフラー', rarity: 'very-rare' }, { name: 'スパイク付きブーツ', rarity: 'very-rare' },
+        { name: '汚れたスリッパ', rarity: 'very-rare' }, { name: '軽量チェーン', rarity: 'very-rare' },
+        { name: 'ボロボロのエンジン', rarity: 'rare' }, { name: '低反動のチェーン', rarity: 'rare' },
+        { name: 'トンプソンズ・ミックス', rarity: 'rare' }, { name: '汚れたチェーン', rarity: 'rare' },
+        { name: '親父のブーツ', rarity: 'rare' },
+        { name: '高速アイドラネジ', rarity: 'uncommon' }, { name: 'ノーブランドのモーターオイル', rarity: 'uncommon' },
+        { name: '吸気口のネジ', rarity: 'uncommon' }, { name: '保温ケース', rarity: 'uncommon' },
+        { name: '油を差したスロットル', rarity: 'uncommon' },
+        { name: '廃棄されたエアフィルター', rarity: 'common' }, { name: 'つり合いおもり', rarity: 'common' },
+        { name: '安全ブーツ', rarity: 'common' }, { name: 'ひびの入ったプライマーバルブ', rarity: 'common' }
+      ],
+      nurse: [
+        { name: 'ちぎれた栞', rarity: 'ultra' }, { name: 'マッチ箱', rarity: 'ultra' },
+        { name: 'キャンベルの最期の一息', rarity: 'very-rare' }, { name: 'カヴァナーの最期の一息', rarity: 'very-rare' },
+        { name: 'バッドマンの最期の一息', rarity: 'very-rare' }, { name: 'ジェナーの最期の一息', rarity: 'very-rare' },
+        { name: '重く息切れする呼気', rarity: 'rare' }, { name: 'はかない息切れ', rarity: 'rare' },
+        { name: '痙攣する呼気', rarity: 'rare' }, { name: '心配性の喘ぎ', rarity: 'rare' },
+        { name: '失調性の呼気', rarity: 'rare' },
+        { name: 'すり減ったブレスレット', rarity: 'uncommon' }, { name: '暗色の帯', rarity: 'uncommon' },
+        { name: '懐中時計', rarity: 'uncommon' }, { name: '緊張病の男の子の宝物', rarity: 'uncommon' },
+        { name: 'バッドマンの形見', rarity: 'uncommon' },
+        { name: '木馬', rarity: 'common' }, { name: '白い梳き櫛', rarity: 'common' },
+        { name: '縞模様の布切れ', rarity: 'common' }, { name: '金属のスプーン', rarity: 'common' }
+      ],
+      shape: [
+        { name: '傷ついた鏡', rarity: 'ultra' }, { name: 'ジュディスの墓石', rarity: 'ultra' },
+        { name: 'キラキラする破片', rarity: 'very-rare' }, { name: '化粧鏡', rarity: 'very-rare' },
+        { name: '墓石の欠片', rarity: 'very-rare' }, { name: '髪の毛の房', rarity: 'very-rare' },
+        { name: 'ジュディスの日記', rarity: 'rare' }, { name: 'ジュエリーボックス', rarity: 'rare' },
+        { name: '鏡のかけら', rarity: 'rare' }, { name: 'J・マイヤーズの思い出', rarity: 'rare' },
+        { name: 'リボンの髪留め', rarity: 'rare' },
+        { name: 'ガラスの破片', rarity: 'uncommon' }, { name: 'ジュエリー', rarity: 'uncommon' },
+        { name: 'ウサギの死体', rarity: 'uncommon' }, { name: 'ガラスの破片(予備)', rarity: 'uncommon' },
+        { name: 'いい香りがする髪の毛の束', rarity: 'uncommon' },
+        { name: '金色の髪の毛', rarity: 'common' }, { name: 'ボーイフレンドのメモ', rarity: 'common' },
+        { name: '安っぽいイヤリング', rarity: 'common' }, { name: '思い出の花', rarity: 'common' }
+      ],
+      hag: [
+        { name: 'ずぶ濡れの靴', rarity: 'ultra' }, { name: 'ミント柄のぼろきれ', rarity: 'ultra' },
+        { name: '錆びた枷', rarity: 'very-rare' }, { name: 'おばあちゃんの心臓', rarity: 'very-rare' },
+        { name: '切り取られた手', rarity: 'very-rare' }, { name: '変形した耳', rarity: 'very-rare' },
+        { name: '乾燥したセミ', rarity: 'rare' }, { name: '柳のリース', rarity: 'rare' },
+        { name: '湿地蘭のネックレス', rarity: 'rare' }, { name: '割れたカメの卵', rarity: 'rare' },
+        { name: '血が混じった泥', rarity: 'rare' },
+        { name: 'ネコヤナギの花々', rarity: 'uncommon' }, { name: '血染めの水', rarity: 'uncommon' },
+        { name: '糸杉の首飾り', rarity: 'uncommon' }, { name: 'トンボの羽', rarity: 'uncommon' },
+        { name: '半分の卵の殻', rarity: 'uncommon' },
+        { name: 'ロープのネックレス', rarity: 'common' }, { name: 'ハエの死骸が入った泥', rarity: 'common' },
+        { name: '粉々になった卵の殻', rarity: 'common' }, { name: '沼の水', rarity: 'common' }
+      ],
+      doctor: [
+        { name: '「玉虫色のキング」', rarity: 'ultra' }, { name: '「玉虫色のクイーン」', rarity: 'ultra' },
+        { name: '「秩序」- カーターのメモ', rarity: 'very-rare' }, { name: '「抑制」- カーターのメモ', rarity: 'very-rare' },
+        { name: '「鎮静」- カーターのメモ', rarity: 'very-rare' }, { name: '「懲罰」- カーターのメモ', rarity: 'very-rare' },
+        { name: '「抑制」- カーターのメモ(旧)', rarity: 'rare' }, { name: '「懲罰」- 被験者クラスII', rarity: 'rare' },
+        { name: 'インタビューテープ', rarity: 'rare' }, { name: '壊れたテープ', rarity: 'rare' },
+        { name: '高刺激電極', rarity: 'rare' },
+        { name: '「鎮静」- 被験者クラスII', rarity: 'uncommon' }, { name: '「秩序」- 被験者クラスII', rarity: 'uncommon' },
+        { name: '「抑制」- 被験者クラスII', rarity: 'uncommon' }, { name: '磨かれた電極', rarity: 'uncommon' },
+        { name: '「懲罰」- 被験者クラスII(下位)', rarity: 'uncommon' },
+        { name: 'カビが生えた電極', rarity: 'common' }, { name: '「秩序」- クラスI', rarity: 'common' },
+        { name: '「鎮静」- クラスI', rarity: 'common' }, { name: '楓製のナイト', rarity: 'common' }
+      ],
+      huntress: [
+        { name: '玉虫色の刃', rarity: 'ultra' }, { name: '兵士の巻きゲートル', rarity: 'ultra' },
+        { name: '歩兵のベルト', rarity: 'very-rare' }, { name: '鮮やかな調合薬', rarity: 'very-rare' },
+        { name: '汚れた斧頭', rarity: 'very-rare' }, { name: '木製の狐', rarity: 'very-rare' },
+        { name: '鹿革の手袋', rarity: 'rare' }, { name: 'イワベンケイ', rarity: 'rare' },
+        { name: '毒性の調合物', rarity: 'rare' }, { name: '錆びた刃', rarity: 'rare' },
+        { name: '花のバブーシュカ', rarity: 'rare' },
+        { name: '光り輝くブローチ', rarity: 'uncommon' }, { name: '樫製の柄', rarity: 'uncommon' },
+        { name: 'ドジョウツナギの編み紐', rarity: 'uncommon' }, { name: '革の輪', rarity: 'uncommon' },
+        { name: '重りの付いた刃', rarity: 'uncommon' },
+        { name: 'ザラザラした石', rarity: 'common' }, { name: '黄ばんだ布', rarity: 'common' },
+        { name: '包帯が巻かれた柄', rarity: 'common' }, { name: 'テングダケの毒', rarity: 'common' }
+      ],
+      cannibal: [
+        { name: '玉虫色の刃', rarity: 'ultra' }, { name: 'キャブレター調整ガイド', rarity: 'ultra' },
+        { name: 'デプスゲージ', rarity: 'very-rare' }, { name: '絶品のチリ', rarity: 'very-rare' },
+        { name: '軽量シャーシ', rarity: 'very-rare' }, { name: '錆びた鎖', rarity: 'very-rare' },
+        { name: '暗獣の刻印', rarity: 'rare' }, { name: 'グリース', rarity: 'rare' },
+        { name: '汚れたチェーン', rarity: 'rare' }, { name: '残虐なチェーン', rarity: 'rare' },
+        { name: '市販の潤滑油', rarity: 'rare' },
+        { name: 'プライマー・バルブ', rarity: 'uncommon' }, { name: 'チリ', rarity: 'uncommon' },
+        { name: 'ナイフの傷', rarity: 'uncommon' }, { name: '長いガイドバー', rarity: 'uncommon' },
+        { name: '自家製マフラー', rarity: 'uncommon' },
+        { name: '点火プラグ', rarity: 'common' }, { name: '植物油', rarity: 'common' },
+        { name: 'チェーンソー用やすり', rarity: 'common' }, { name: 'スピードリミッター', rarity: 'common' }
+      ],
+      nightmare: [
+        { name: '黒い箱', rarity: 'ultra' }, { name: '赤のペイントブラシ', rarity: 'ultra' },
+        { name: 'クラス写真', rarity: 'very-rare' }, { name: 'スイングチェーン', rarity: 'very-rare' },
+        { name: 'Zのブロック', rarity: 'very-rare' }, { name: '錠剤の容器', rarity: 'very-rare' },
+        { name: '縄跳び用の縄', rarity: 'rare' }, { name: '青いドレス', rarity: 'rare' },
+        { name: '塗料用シンナー', rarity: 'rare' }, { name: 'ナンシーの最高傑作', rarity: 'rare' },
+        { name: 'ユニコーンのブロック', rarity: 'rare' },
+        { name: '屋外用ロープ', rarity: 'uncommon' }, { name: '緑のドレス', rarity: 'uncommon' },
+        { name: '爪の試作品', rarity: 'uncommon' }, { name: 'ナンシーのスケッチ', rarity: 'uncommon' },
+        { name: '猫のブロック', rarity: 'uncommon' },
+        { name: '羊のブロック', rarity: 'common' }, { name: '庭用熊手', rarity: 'common' },
+        { name: 'ウールのシャツ', rarity: 'common' }, { name: '子供の絵', rarity: 'common' }
+      ],
+      pig: [
+        { name: 'アマンダへの手紙', rarity: 'ultra' }, { name: 'ビデオテープ', rarity: 'ultra' },
+        { name: '改造タイマー', rarity: 'very-rare' }, { name: 'ジグソウのスケッチ', rarity: 'very-rare' },
+        { name: 'アマンダの秘密', rarity: 'very-rare' }, { name: '機械部品の箱', rarity: 'very-rare' },
+        { name: 'ジグソウの注釈付き設計図', rarity: 'rare' }, { name: '錆びた付属品', rarity: 'rare' },
+        { name: '緩効性毒物', rarity: 'rare' }, { name: 'ルールセットNO2', rarity: 'rare' },
+        { name: '機械部品の袋', rarity: 'rare' },
+        { name: '工場の潤滑油', rarity: 'uncommon' }, { name: '万能な刃物', rarity: 'uncommon' },
+        { name: 'フェイスマスク', rarity: 'uncommon' }, { name: '遺言', rarity: 'uncommon' },
+        { name: 'カミソリワイヤー', rarity: 'uncommon' },
+        { name: '割られた注射器', rarity: 'common' }, { name: '軍用の革紐', rarity: 'common' },
+        { name: 'ジョンのカルテ', rarity: 'common' }, { name: '重なり合うカミソリ刃', rarity: 'common' }
+      ],
+      clown: [
+        { name: '赤毛の小指', rarity: 'ultra' }, { name: '入れ墨男の中指', rarity: 'ultra' },
+        { name: '安物のジンボトル', rarity: 'very-rare' }, { name: '葉巻の箱', rarity: 'very-rare' },
+        { name: '派手なメイク道具', rarity: 'very-rare' }, { name: '15VOL%のエーテル', rarity: 'very-rare' },
+        { name: '硫酸の瓶', rarity: 'rare' }, { name: 'クロロホルムのボトル', rarity: 'rare' },
+        { name: 'ブリーチのフラスコ', rarity: 'rare' }, { name: 'アンモニア水', rarity: 'rare' },
+        { name: '臭い中敷', rarity: 'rare' },
+        { name: 'ネバネバしたタールボトル', rarity: 'uncommon' }, { name: '厚いコルク栓', rarity: 'uncommon' },
+        { name: 'ムクドリの羽', rarity: 'uncommon' }, { name: '溶剤の器', rarity: 'uncommon' },
+        { name: '灯油缶', rarity: 'uncommon' },
+        { name: 'コマドリの羽', rarity: 'common' }, { name: '指あきのパレード用手袋', rarity: 'common' },
+        { name: 'パーティー用ボトル', rarity: 'common' }, { name: 'VHSポルノビデオ', rarity: 'common' }
+      ],
+      spirit: [
+        { name: '母娘の指輪', rarity: 'ultra' }, { name: '金継ぎの茶碗', rarity: 'ultra' },
+        { name: '桜のドライフラワー', rarity: 'very-rare' }, { name: '厄除けのお守り', rarity: 'very-rare' },
+        { name: '脇差の鞘', rarity: 'very-rare' }, { name: '風鈴', rarity: 'very-rare' },
+        { name: '錆びた横笛', rarity: 'rare' }, { name: '線香花火', rarity: 'rare' },
+        { name: '刀の鍔', rarity: 'rare' }, { name: 'うちわ', rarity: 'rare' },
+        { name: '母の眼鏡', rarity: 'rare' },
+        { name: '凜の壊れた腕時計', rarity: 'uncommon' }, { name: '白のヘアリボン', rarity: 'uncommon' },
+        { name: '泥だらけの運動会のキャップ', rarity: 'uncommon' }, { name: '開運のお守り', rarity: 'uncommon' },
+        { name: '杜松の盆栽', rarity: 'uncommon' },
+        { name: '草履', rarity: 'common' }, { name: '幸せのお守り', rarity: 'common' },
+        { name: '折り鶴', rarity: 'common' }, { name: '贈り物の竹櫛', rarity: 'common' }
+      ],
+      legion: [
+        { name: '玉虫色のバッジ', rarity: 'ultra' }, { name: '煙を吐くミックステープ', rarity: 'ultra' },
+        { name: '刺し傷の研究', rarity: 'very-rare' }, { name: 'フランクのミックステープ', rarity: 'very-rare' },
+        { name: '汚れた刃', rarity: 'very-rare' }, { name: '永遠のベストフレンド', rarity: 'very-rare' },
+        { name: 'スージーのミックステープ', rarity: 'rare' }, { name: 'スタイリッシュなサングラス', rarity: 'rare' },
+        { name: 'ジョーイのミックステープ', rarity: 'rare' }, { name: 'リージョンのバッジ', rarity: 'rare' },
+        { name: '盗まれたスケッチブック', rarity: 'rare' },
+        { name: '壁画のスケッチ', rarity: 'uncommon' }, { name: 'エッチングされた定規', rarity: 'uncommon' },
+        { name: 'ジュリーのミックステープ', rarity: 'uncommon' }, { name: '落書きされたスマイリーバッジ', rarity: 'uncommon' },
+        { name: '眠気覚まし薬', rarity: 'uncommon' },
+        { name: '友情のブレスレット', rarity: 'common' }, { name: 'スマイリーフェイスのバッジ', rarity: 'common' },
+        { name: 'いたずら用のカミソリ', rarity: 'common' }, { name: '擦り切れたカセットテープ', rarity: 'common' }
+      ],
+      plague: [
+        { name: '黒のお香', rarity: 'ultra' }, { name: '玉虫色の印章', rarity: 'ultra' },
+        { name: '崇拝の石版', rarity: 'very-rare' }, { name: '切断された足の指', rarity: 'very-rare' },
+        { name: '狂信者のお守り', rarity: 'very-rare' }, { name: '穢れの吐剤', rarity: 'very-rare' },
+        { name: '退魔のお守り', rarity: 'rare' }, { name: '灰色のリンゴ', rarity: 'rare' },
+        { name: '香る軟膏', rarity: 'rare' }, { name: '感染催吐薬', rarity: 'rare' },
+        { name: 'マッサージ用オイル', rarity: 'rare' },
+        { name: '赤鉄鉱の印章', rarity: 'uncommon' }, { name: '予防のお守り', rarity: 'uncommon' },
+        { name: '強力チンキ', rarity: 'uncommon' }, { name: '祝福のりんご', rarity: 'uncommon' },
+        { name: '催吐薬', rarity: 'uncommon' },
+        { name: '祈りの石版片', rarity: 'common' }, { name: 'オリバナムのお香', rarity: 'common' },
+        { name: '石灰岩の印章', rarity: 'common' }, { name: '治癒の難航', rarity: 'common' }
+      ],
+      ghostface: [
+        { name: '屋外用防犯カメラ', rarity: 'ultra' }, { name: '「ゴーストフェイス、カメラに捉えられる」', rarity: 'ultra' },
+        { name: 'ドロップレッグタイプのナイフシース', rarity: 'very-rare' }, { name: '運転免許証', rarity: 'very-rare' },
+        { name: '単眼暗視スコープ', rarity: 'very-rare' }, { name: '詳細な犠牲者の日課', rarity: 'very-rare' },
+        { name: 'オルセンの財布', rarity: 'rare' }, { name: '革製ナイフシース', rarity: 'rare' },
+        { name: '持続性のある香水', rarity: 'rare' }, { name: 'ナイフ用ベルトクリップ', rarity: 'rare' },
+        { name: '噛み跡のついたペン', rarity: 'rare' },
+        { name: '印をつけた地図', rarity: 'uncommon' }, { name: 'シンチストラップ', rarity: 'uncommon' },
+        { name: '望遠レンズ', rarity: 'uncommon' }, { name: 'オルセンの日記', rarity: 'uncommon' },
+        { name: 'オルセンのアドレス帳', rarity: 'uncommon' },
+        { name: '「愛しのフィラデルフィア」', rarity: 'common' }, { name: 'ウォールアイの紙マッチ', rarity: 'common' },
+        { name: '安物コロン', rarity: 'common' }, { name: '見出しの切り抜き', rarity: 'common' }
+      ],
+      demogorgon: [
+        { name: 'ふけ状の地衣類', rarity: 'ultra' }, { name: '赤い苔', rarity: 'ultra' },
+        { name: '未知の卵', rarity: 'very-rare' }, { name: '裏側の世界の樹脂', rarity: 'very-rare' },
+        { name: 'ヴァーミリオン・ウェブキャップ', rarity: 'very-rare' }, { name: 'ライフガードのホイッスル', rarity: 'very-rare' },
+        { name: 'イレブンのソーダ', rarity: 'rare' }, { name: '茨のツル', rarity: 'rare' },
+        { name: '真鍮のライター', rarity: 'rare' }, { name: 'ヴァイオレット・ワックスキャップ', rarity: 'rare' },
+        { name: '鹿の肺', rarity: 'rare' },
+        { name: '腐った緑のトライプ', rarity: 'uncommon' }, { name: 'ヴィスカス・ウェビング', rarity: 'uncommon' },
+        { name: 'スティッキーライニング', rarity: 'uncommon' }, { name: 'バーブの眼鏡', rarity: 'uncommon' },
+        { name: 'ミューの内臓', rarity: 'uncommon' },
+        { name: '腐ったかぼちゃ', rarity: 'common' }, { name: '黒の心臓', rarity: 'common' },
+        { name: 'ネズミのレバー', rarity: 'common' }, { name: 'ネズミの尾', rarity: 'common' }
+      ],
+      oni: [
+        { name: '玉虫色の家紋', rarity: 'ultra' }, { name: '練次郎の血濡れの篭手', rarity: 'ultra' },
+        { name: '裂けた船体', rarity: 'very-rare' }, { name: 'ライオンの牙', rarity: 'very-rare' },
+        { name: '彰人の松葉杖', rarity: 'very-rare' }, { name: '涙が染み込んだ手ぬぐい', rarity: 'very-rare' },
+        { name: '山岡家の幟', rarity: 'rare' }, { name: '木製の鬼の面', rarity: 'rare' },
+        { name: '折れた脇差', rarity: 'rare' }, { name: '頭皮のついたちょんまげ', rarity: 'rare' },
+        { name: '家内安全のお守り', rarity: 'rare' },
+        { name: '子どもの木刀', rarity: 'uncommon' }, { name: '水墨画のライオン', rarity: 'uncommon' },
+        { name: '磨かれた前立物', rarity: 'uncommon' }, { name: '欠けた采配', rarity: 'uncommon' },
+        { name: '血塗れのサッシュ', rarity: 'uncommon' },
+        { name: '提灯', rarity: 'common' }, { name: '朽ちかけたロープ', rarity: 'common' },
+        { name: 'ひびの入った盃', rarity: 'common' }, { name: '黒ずんだ足爪', rarity: 'common' }
+      ],
+      deathslinger: [
+        { name: '玉虫色のコイン', rarity: 'ultra' }, { name: 'ヘルシャーの鉄', rarity: 'ultra' },
+        { name: 'ベイショアの葉巻', rarity: 'very-rare' }, { name: '鉄条', rarity: 'very-rare' },
+        { name: '刑務所の足かせ', rarity: 'very-rare' }, { name: 'ゴールドクリークのウィスキー', rarity: 'very-rare' },
+        { name: 'ハニーローカーストの棘', rarity: 'rare' }, { name: 'ブリキのオイル缶', rarity: 'rare' },
+        { name: 'ベイショアの金歯', rarity: 'rare' }, { name: '指名手配ポスター', rarity: 'rare' },
+        { name: '看守の鍵', rarity: 'rare' },
+        { name: '保安官の記章', rarity: 'uncommon' }, { name: '噛み煙草', rarity: 'uncommon' },
+        { name: '漆の葉', rarity: 'uncommon' }, { name: '錆びた犬釘', rarity: 'uncommon' },
+        { name: '顎粉砕弾', rarity: 'uncommon' },
+        { name: 'インチキ薬', rarity: 'common' }, { name: 'ボロボロの鎖', rarity: 'common' },
+        { name: '唾磨きのボロ布', rarity: 'common' }, { name: '改造弾帯', rarity: 'common' }
+      ],
+      executioner: [
+        { name: '黒曜石の酒杯', rarity: 'ultra' }, { name: '玉虫色のメタトロンの紋章', rarity: 'ultra' },
+        { name: '緋色の卵', rarity: 'very-rare' }, { name: '錆色の卵', rarity: 'very-rare' },
+        { name: '失われた記憶の書', rarity: 'very-rare' }, { name: '赤の祭祀の書', rarity: 'very-rare' },
+        { name: 'ヴァルティエル派の写真', rarity: 'rare' }, { name: '燃える人の絵', rarity: 'rare' },
+        { name: 'マネキンの足', rarity: 'rare' }, { name: '虐げる者の銘板', rarity: 'rare' },
+        { name: '霧の日、裁きの跡', rarity: 'rare' },
+        { name: '灰かぶり姫のオルゴール', rarity: 'uncommon' }, { name: 'ろう人形', rarity: 'uncommon' },
+        { name: '槍の穂先', rarity: 'uncommon' }, { name: '忘れられたビデオテープ', rarity: 'uncommon' },
+        { name: 'ヒョウ柄の布', rarity: 'uncommon' },
+        { name: '鉛の指輪', rarity: 'common' }, { name: '死んだ蝶', rarity: 'common' },
+        { name: '銅の指輪', rarity: 'common' }, { name: '黒のストラップ', rarity: 'common' }
+      ],
+      blight: [
+        { name: '化合物33', rarity: 'ultra' }, { name: '玉虫色のブライト用ラベル', rarity: 'ultra' },
+        { name: '錬金術師の指輪', rarity: 'very-rare' }, { name: 'ヴィゴの手記', rarity: 'very-rare' },
+        { name: '召喚の石', rarity: 'very-rare' }, { name: '魂の化学物質', rarity: 'very-rare' },
+        { name: 'アドレナリンの小瓶', rarity: 'rare' }, { name: 'バラの強壮剤', rarity: 'rare' },
+        { name: '化合物21', rarity: 'rare' }, { name: '本影の塩', rarity: 'rare' },
+        { name: '破滅したカラス', rarity: 'rare' },
+        { name: 'プレイグの胆汁', rarity: 'uncommon' }, { name: 'バチュラの粉', rarity: 'uncommon' },
+        { name: 'ボロボロの手記', rarity: 'uncommon' }, { name: '潰瘍の棘', rarity: 'uncommon' },
+        { name: '破滅したネズミ', rarity: 'uncommon' },
+        { name: 'ジギタリス', rarity: 'common' }, { name: '化合物7', rarity: 'common' },
+        { name: '欠けた単眼鏡', rarity: 'common' }, { name: '錠剤タイプの偽薬', rarity: 'common' }
+      ],
+      twins: [
+        { name: '玉虫色のペンダント', rarity: 'ultra' }, { name: '沈黙の布', rarity: 'ultra' },
+        { name: '森のシチュー', rarity: 'very-rare' }, { name: 'ヴィクトルの兵士', rarity: 'very-rare' },
+        { name: 'コマ', rarity: 'very-rare' }, { name: '微量の香水', rarity: 'very-rare' },
+        { name: 'マドレーヌのスカーフ', rarity: 'rare' }, { name: '下水道のヘドロ', rarity: 'rare' },
+        { name: '重いガラガラ', rarity: 'rare' }, { name: '硬くなったパン', rarity: 'rare' },
+        { name: '錆びた針', rarity: 'rare' },
+        { name: 'マドレーヌの手袋', rarity: 'uncommon' }, { name: '乳歯', rarity: 'uncommon' },
+        { name: '儀式用のキャンドルスティック', rarity: 'uncommon' }, { name: '猫の眼', rarity: 'uncommon' },
+        { name: '血濡れの黒頭巾', rarity: 'uncommon' },
+        { name: 'おもちゃの剣', rarity: 'common' }, { name: '爪', rarity: 'common' },
+        { name: '猫の置物', rarity: 'common' }, { name: '酸っぱくなった牛乳', rarity: 'common' }
+      ],
+      trickster: [
+        { name: '玉虫色のフォトカード', rarity: 'ultra' }, { name: '断末魔の編集音源', rarity: 'ultra' },
+        { name: 'ダイヤのカフスボタン', rarity: 'very-rare' }, { name: 'シングル『カット・スルー・ユー』', rarity: 'very-rare' },
+        { name: 'エッジの効いた復活アルバム', rarity: 'very-rare' }, { name: 'トリック用の刃物', rarity: 'very-rare' },
+        { name: '『ウェイティング・フォー・ユー』の時計', rarity: 'rare' }, { name: 'フィズスピンソーダ', rarity: 'rare' },
+        { name: '美しい旋律の殺人', rarity: 'rare' }, { name: '引き裂き魔のサポーター', rarity: 'rare' },
+        { name: 'シングル曲『狙いうち』', rarity: 'rare' },
+        { name: '血まみれのボア', rarity: 'uncommon' }, { name: 'ジウンのサイン', rarity: 'uncommon' },
+        { name: 'テキーラ・ムーンロック', rarity: 'uncommon' }, { name: '幸運のナイフ', rarity: 'uncommon' },
+        { name: '檻の心のシューズ', rarity: 'uncommon' },
+        { name: 'トリック用ポーチ', rarity: 'common' }, { name: '思い出のナイフ', rarity: 'common' },
+        { name: '死の声部のレコード', rarity: 'common' }, { name: '烈火のケーブル', rarity: 'common' }
+      ],
+      nemesis: [
+        { name: '玉虫色のアンブレラ記章', rarity: 'ultra' }, { name: '粉砕されたS.T.A.R.Sの記章', rarity: 'ultra' },
+        { name: 'NE-A寄生体', rarity: 'very-rare' }, { name: 'インク切れのインクリボン', rarity: 'very-rare' },
+        { name: 'ジルのサンドイッチ', rarity: 'very-rare' }, { name: '割れた廃品硬貨', rarity: 'very-rare' },
+        { name: 'Tウィルスのサンプル', rarity: 'rare' }, { name: 'セロトニン入り注射器', rarity: 'rare' },
+        { name: 'プラント43のつる', rarity: 'rare' }, { name: 'リッカーの舌', rarity: 'rare' },
+        { name: '暴君の血', rarity: 'rare' },
+        { name: 'アドレナリン入り注射器', rarity: 'uncommon' }, { name: 'ゾンビの心臓', rarity: 'uncommon' },
+        { name: 'マービンの血', rarity: 'uncommon' }, { name: 'ミハイルの眼', rarity: 'uncommon' },
+        { name: '管理者用リストバンド', rarity: 'uncommon' },
+        { name: 'S.T.A.R.S式体術教本', rarity: 'common' }, { name: '壊れた注射器', rarity: 'common' },
+        { name: 'ブライアンのはらわた', rarity: 'common' }, { name: '訪問者用リストバンド', rarity: 'common' }
+      ],
+      cenobite: [
+        { name: '技師の犬歯', rarity: 'ultra' }, { name: '玉虫色のルマルシャンの箱', rarity: 'ultra' },
+        { name: '最初の痛み', rarity: 'very-rare' }, { name: '突き刺すワイヤー', rarity: 'very-rare' },
+        { name: 'チャタラーの歯', rarity: 'very-rare' }, { name: '脂っこい黒のレンズ', rarity: 'very-rare' },
+        { name: 'フランクのスライス', rarity: 'rare' }, { name: 'フランクの心臓', rarity: 'rare' },
+        { name: 'ラリーの血', rarity: 'rare' }, { name: 'ラリーの遺体', rarity: 'rare' },
+        { name: '拷問柱', rarity: 'rare' },
+        { name: 'うごめく蛆', rarity: 'uncommon' }, { name: 'ちらつくテレビ', rarity: 'uncommon' },
+        { name: '串刺しネズミ', rarity: 'uncommon' }, { name: '液化した血餅', rarity: 'uncommon' },
+        { name: '腐った食事', rarity: 'uncommon' },
+        { name: '曲がった釘', rarity: 'common' }, { name: '燃えるキャンドル', rarity: 'common' },
+        { name: '跳ねるコウロギ', rarity: 'common' }, { name: '革の切れ端', rarity: 'common' }
+      ],
+      artist: [
+        { name: '腐敗した庭', rarity: 'ultra' }, { name: '玉虫色の羽', rarity: 'ultra' },
+        { name: 'インクの卵', rarity: 'very-rare' }, { name: 'マティアスのベビーシューズ', rarity: 'very-rare' },
+        { name: '切断された手', rarity: 'very-rare' }, { name: '切断された舌', rarity: 'very-rare' },
+        { name: 'おお悲しみよ、おお愛する人よ', rarity: 'rare' }, { name: '木炭の棒', rarity: 'rare' },
+        { name: '棘のある巣', rarity: 'rare' }, { name: '真っ黒なインク', rarity: 'rare' },
+        { name: '銀の鐘', rarity: 'rare' },
+        { name: 'カラスの静物画', rarity: 'uncommon' }, { name: 'ビロード生地', rarity: 'uncommon' },
+        { name: '無意識のスケッチ', rarity: 'uncommon' }, { name: '無題の悲痛', rarity: 'uncommon' },
+        { name: '腐った死肉', rarity: 'uncommon' },
+        { name: 'ジャイアントコーン', rarity: 'common' }, { name: '油絵の具', rarity: 'common' },
+        { name: '高粘度のタール', rarity: 'common' }, { name: '鮮やかな死亡記事', rarity: 'common' }
+      ],
+      onryo: [
+        { name: 'リモートコントロール', rarity: 'ultra' }, { name: '玉虫色のビデオテープ', rarity: 'ultra' },
+        { name: 'ビデオテープの編集用デスク', rarity: 'very-rare' }, { name: 'ビデオデッキ', rarity: 'very-rare' },
+        { name: '歪んだ写真', rarity: 'very-rare' }, { name: '電話', rarity: 'very-rare' },
+        { name: 'おんぼろの風車', rarity: 'rare' }, { name: '井戸水', rarity: 'rare' },
+        { name: '母の櫛', rarity: 'rare' }, { name: '血だらけの爪', rarity: 'rare' },
+        { name: '輪の絵', rarity: 'rare' },
+        { name: '井戸の石', rarity: 'uncommon' }, { name: '海水に濡れた布', rarity: 'uncommon' },
+        { name: '玲子の腕時計', rarity: 'uncommon' }, { name: '陽一の漁網', rarity: 'uncommon' },
+        { name: '髪の塊', rarity: 'uncommon' },
+        { name: 'コテージの看板', rarity: 'common' }, { name: 'ダビングしたビデオテープ', rarity: 'common' },
+        { name: '古い新聞紙', rarity: 'common' }, { name: '母の鏡', rarity: 'common' }
+      ],
+      dredge: [
+        { name: '玉虫色の木板', rarity: 'ultra' }, { name: '生贄のナイフ', rarity: 'ultra' },
+        { name: '小型マイク', rarity: 'very-rare' }, { name: '戦いの記録者', rarity: 'very-rare' },
+        { name: '耕作用刃', rarity: 'very-rare' }, { name: '船の鍵', rarity: 'very-rare' },
+        { name: 'オットーマリアンの読み物', rarity: 'rare' }, { name: '不安の石', rarity: 'rare' },
+        { name: '壊れた人形', rarity: 'rare' }, { name: '戦時のヘルメット', rarity: 'rare' },
+        { name: '粉砕された枕', rarity: 'rare' },
+        { name: 'ネガティブ思考者の頭蓋骨', rarity: 'uncommon' }, { name: 'ハディのカレンダー', rarity: 'uncommon' },
+        { name: '消臭スプレー', rarity: 'uncommon' }, { name: '焼かれた手紙', rarity: 'uncommon' },
+        { name: '落下した屋根板', rarity: 'uncommon' },
+        { name: 'すり鉢とすりこぎ', rarity: 'common' }, { name: 'カフェイン錠剤', rarity: 'common' },
+        { name: '信奉者の頭巾', rarity: 'common' }, { name: '木の板', rarity: 'common' }
+      ],
+      mastermind: [
+        { name: '玉虫色のウロボロス入り瓶', rarity: 'ultra' }, { name: '研究所の写真', rarity: 'ultra' },
+        { name: 'グリーンハーブ', rarity: 'very-rare' }, { name: 'ヘリコプターの操縦桿', rarity: 'very-rare' },
+        { name: 'ウロボロスウイルス', rarity: 'very-rare' }, { name: '黒のサングラス', rarity: 'very-rare' },
+        { name: 'レッドハーブ', rarity: 'rare' }, { name: 'バージンメダル', rarity: 'rare' },
+        { name: 'ポータブルセーフ', rarity: 'rare' }, { name: 'ビデオ会議用機器', rarity: 'rare' },
+        { name: '卵 (金)', rarity: 'rare' },
+        { name: '拡声器', rarity: 'uncommon' }, { name: '緩いクランク', rarity: 'uncommon' },
+        { name: 'ライオンメダル', rarity: 'uncommon' }, { name: '革の手袋', rarity: 'uncommon' },
+        { name: '黄金の杯', rarity: 'uncommon' },
+        { name: 'R.P.D.の肩掛け無線', rarity: 'common' }, { name: 'ホウセキカミキリ', rarity: 'common' },
+        { name: 'ユニコーンメダル', rarity: 'common' }, { name: '蔓性ウロボロス', rarity: 'common' }
+      ],
+      knight: [
+        { name: '騎士の契約', rarity: 'ultra' }, { name: '玉虫色の軍旗', rarity: 'ultra' },
+        { name: '治癒の湿布薬', rarity: 'very-rare' }, { name: '火打ち石と打ち金', rarity: 'very-rare' },
+        { name: '鍛冶屋のハンマー', rarity: 'very-rare' }, { name: '看守の鈴', rarity: 'very-rare' },
+        { name: '不気味な鉄仮面', rarity: 'rare' }, { name: '折れた柄', rarity: 'rare' },
+        { name: '見張り番のたいまつ', rarity: 'rare' }, { name: '鍛冶屋のトング', rarity: 'rare' },
+        { name: '尖った棒', rarity: 'rare' },
+        { name: '傭兵の招集', rarity: 'uncommon' }, { name: '凶暴な戦斧', rarity: 'uncommon' },
+        { name: '干し馬肉', rarity: 'uncommon' }, { name: '研がれた刃', rarity: 'uncommon' },
+        { name: '鋼鉄の手錠', rarity: 'uncommon' },
+        { name: 'ザラザラした塊', rarity: 'common' }, { name: 'ボロボロのタバード', rarity: 'common' },
+        { name: '略奪した蜂蜜種', rarity: 'common' }, { name: '領域の地図', rarity: 'common' }
+      ],
+      merchant: [
+        { name: '玉虫色の未発表原稿', rarity: 'ultra' }, { name: '期限切れ電池', rarity: 'ultra' },
+        { name: '施策回転翼', rarity: 'very-rare' }, { name: '不規則発光装置', rarity: 'very-rare' },
+        { name: '地理情報の読み出し', rarity: 'very-rare' }, { name: '高度移動予測プログラム', rarity: 'very-rare' },
+        { name: 'ガラス粉', rarity: 'rare' }, { name: 'ターゲット分析プロセッサ', rarity: 'rare' },
+        { name: '信号雑音発生器', rarity: 'rare' }, { name: '熱感知アップグレード', rarity: 'rare' },
+        { name: '緩んだネジ', rarity: 'rare' },
+        { name: 'ショットガンスピーカー', rarity: 'uncommon' }, { name: 'ステレオ遠隔マイク', rarity: 'uncommon' },
+        { name: '状況適応照明', rarity: 'uncommon' }, { name: '低電力モード', rarity: 'uncommon' },
+        { name: '過充電', rarity: 'uncommon' },
+        { name: 'アヴィ・ヴァレンテ創刊号', rarity: 'common' }, { name: '超音波スピーカー', rarity: 'common' },
+        { name: '高出力投光照明', rarity: 'common' }, { name: '高電流アップグレード', rarity: 'common' }
+      ],
+      singularity: [
+        { name: '拒絶された請求フォーム', rarity: 'ultra' }, { name: '玉虫色のクリスタルの欠片', rarity: 'ultra' },
+        { name: 'ソーマ家の写真', rarity: 'very-rare' }, { name: '乗組員名簿', rarity: 'very-rare' },
+        { name: '状況確認装置(建築用)', rarity: 'very-rare' }, { name: '異星種植物繊維', rarity: 'very-rare' },
+        { name: 'ナノマシン入りジェル', rarity: 'rare' }, { name: 'ホログラム投影機', rarity: 'rare' },
+        { name: '空の酸素タンク', rarity: 'rare' }, { name: '覚醒スプレー', rarity: 'rare' },
+        { name: '送電線', rarity: 'rare' },
+        { name: 'アンドロイドの腕', rarity: 'uncommon' }, { name: '極低温ジェル', rarity: 'uncommon' },
+        { name: '燃やされた死体', rarity: 'uncommon' }, { name: '超音波センサー', rarity: 'uncommon' },
+        { name: '子供用野球グローブ', rarity: 'uncommon' },
+        { name: '状況確認装置(修理用)', rarity: 'common' }, { name: '栄養懸濁液', rarity: 'common' },
+        { name: '破損したセキュリティーキー', rarity: 'common' }, { name: '重水', rarity: 'common' }
+      ],
+      xenomorph: [
+        { name: '酸性の血', rarity: 'ultra' }, { name: '即席の牛追い棒', rarity: 'ultra' },
+        { name: '猫のキャリーバッグ', rarity: 'very-rare' }, { name: '自爆装置のボルト', rarity: 'very-rare' },
+        { name: '記号キーボード', rarity: 'very-rare' }, { name: '銛砲', rarity: 'very-rare' },
+        { name: 'ケインのヘルメット', rarity: 'rare' }, { name: 'パーカーのヘッドバンド', rarity: 'rare' },
+        { name: '多目的斧', rarity: 'rare' }, { name: '脱皮した殻', rarity: 'rare' },
+        { name: '緊急用ヘルメット', rarity: 'rare' },
+        { name: 'ブレットの帽子', rarity: 'uncommon' }, { name: 'アッシュの内部構造', rarity: 'uncommon' },
+        { name: 'ランバートの星図', rarity: 'uncommon' }, { name: '乗組員のヘッドセット', rarity: 'uncommon' },
+        { name: '照明棒', rarity: 'uncommon' },
+        { name: 'オヴォモーフ', rarity: 'common' }, { name: 'シリアルの宇宙食', rarity: 'common' },
+        { name: 'リプリーの時計', rarity: 'common' }, { name: '水飲み鳥', rarity: 'common' }
+      ],
+      goodguy: [
+        { name: '安全帽', rarity: 'ultra' }, { name: '玉虫色のお守り', rarity: 'ultra' },
+        { name: 'クギの山', rarity: 'very-rare' }, { name: 'ビニール袋', rarity: 'very-rare' },
+        { name: '西洋剃刀', rarity: 'very-rare' }, { name: '鏡の破片', rarity: 'very-rare' },
+        { name: 'シルクの枕', rarity: 'rare' }, { name: 'ネズミ駆除剤', rarity: 'rare' },
+        { name: 'ランニングシューズ', rarity: 'rare' }, { name: '携帯テレビ', rarity: 'rare' },
+        { name: '物差し', rarity: 'rare' },
+        { name: 'パワードリル', rarity: 'uncommon' }, { name: 'ヘアスプレーとキャンドル', rarity: 'uncommon' },
+        { name: '縄跳び用の縄', rarity: 'uncommon' }, { name: '自動スクリュードライバー', rarity: 'uncommon' },
+        { name: '電動肉切り包丁', rarity: 'uncommon' },
+        { name: 'グッドガイ人形の箱', rarity: 'common' }, { name: 'ストロボスコープ', rarity: 'common' },
+        { name: '人形の目', rarity: 'common' }, { name: '小さな外科用メス', rarity: 'common' }
+      ],
+      unknown: [
+        { name: '玉虫色のOSSレポート', rarity: 'ultra' }, { name: '暗闇に囚われて', rarity: 'ultra' },
+        { name: '不透明なゲームカートリッジ', rarity: 'very-rare' }, { name: '手作りの仮面', rarity: 'very-rare' },
+        { name: '捨てられた牛乳パック', rarity: 'very-rare' }, { name: '血清の小瓶', rarity: 'very-rare' },
+        { name: 'B級映画のポスター', rarity: 'rare' }, { name: '一面記事', rarity: 'rare' },
+        { name: '催眠術師の時計', rarity: 'rare' }, { name: '小物消しの箱', rarity: 'rare' },
+        { name: '足跡', rarity: 'rare' },
+        { name: '切り裂かれたバッグパック', rarity: 'uncommon' }, { name: '最後に確認された音源', rarity: 'uncommon' },
+        { name: '理論が書かれたノート', rarity: 'uncommon' }, { name: '被害者の地図', rarity: 'uncommon' },
+        { name: '謎の起源を持つ装置', rarity: 'uncommon' },
+        { name: 'ぼやけた写真', rarity: 'common' }, { name: 'ウサギの足', rarity: 'common' },
+        { name: '描きかけのスケッチ', rarity: 'common' }, { name: '貫かれた眼球', rarity: 'common' }
+      ],
+      lich: [
+        { name: 'ヴォーパル・ソード', rarity: 'ultra' }, { name: '玉虫色の不浄なる暗黒の書', rarity: 'ultra' },
+        { name: 'アイ・ローブ', rarity: 'very-rare' }, { name: 'インヴィジリティ・クローク', rarity: 'very-rare' },
+        { name: 'ドラゴンテュース・ダガー', rarity: 'very-rare' }, { name: 'ホールディング・バッグ', rarity: 'very-rare' },
+        { name: 'ウィザリング・スタッフ', rarity: 'rare' }, { name: 'エルブンカインド・クローク', rarity: 'rare' },
+        { name: 'オーネイト・ホーン', rarity: 'rare' }, { name: 'スピード・ブーツ', rarity: 'rare' },
+        { name: 'パワー・パール', rarity: 'rare' },
+        { name: 'グラス・アイ', rarity: 'uncommon' }, { name: 'スピード・ポーション', rarity: 'uncommon' },
+        { name: 'スペル・ストアリング・リング', rarity: 'uncommon' }, { name: 'テレキネシス・リング', rarity: 'uncommon' },
+        { name: 'ランタン・オヴ・リヴィーリング', rarity: 'uncommon' },
+        { name: 'クリスタル・ボール', rarity: 'common' }, { name: 'タタード・ヘッドバンド', rarity: 'common' },
+        { name: 'トリックスターズ・グローブ', rarity: 'common' }, { name: 'レイヴンズ・フェザー', rarity: 'common' }
+      ],
+      darklord: [
+        { name: 'アルカードシールド', rarity: 'ultra' }, { name: '玉虫色の指輪', rarity: 'ultra' },
+        { name: 'アンフアゥグリアの犬歯', rarity: 'very-rare' }, { name: 'マテライズキューブ', rarity: 'very-rare' },
+        { name: 'メデューサの髪', rarity: 'very-rare' }, { name: 'ラピス・ラズリ', rarity: 'very-rare' },
+        { name: 'キラードール', rarity: 'rare' }, { name: 'クレイジーエコー', rarity: 'rare' },
+        { name: 'サングラス', rarity: 'rare' }, { name: '懐中時計', rarity: 'rare' },
+        { name: 'シルフの羽', rarity: 'rare' },
+        { name: '白オオカミのメダル', rarity: 'uncommon' }, { name: 'ウィングブーツ', rarity: 'uncommon' },
+        { name: 'マジカルチケット', rarity: 'uncommon' }, { name: 'ムーンストーンのネックレス', rarity: 'uncommon' },
+        { name: '血の入った酒杯', rarity: 'uncommon' },
+        { name: '旅人のつばひろ帽', rarity: 'common' }, { name: 'ケルベロスの爪', rarity: 'common' },
+        { name: 'ルビーの飾り輪', rarity: 'common' }, { name: '時計塔の歯車', rarity: 'common' }
+      ],
+      houndmaster: [
+        { name: '玉虫色の舵輪', rarity: 'ultra' }, { name: '切り裂かれた小説', rarity: 'ultra' },
+        { name: '火薬缶', rarity: 'very-rare' }, { name: '網通しスパイク', rarity: 'very-rare' },
+        { name: '船首像', rarity: 'very-rare' }, { name: '革のハーネス', rarity: 'very-rare' },
+        { name: 'スパイク付きの首輪', rarity: 'rare' }, { name: '未完成の地図', rarity: 'rare' },
+        { name: '脂身の多い肉', rarity: 'rare' }, { name: '訓練用の鈴', rarity: 'rare' },
+        { name: '革の水筒', rarity: 'rare' },
+        { name: 'ビレイピン', rarity: 'uncommon' }, { name: 'フエダイの燻製', rarity: 'uncommon' },
+        { name: '大麦の粗挽き粉', rarity: 'uncommon' }, { name: '結び目のある縄', rarity: 'uncommon' },
+        { name: '見張り望遠鏡', rarity: 'uncommon' },
+        { name: '未完成のココナッツ', rarity: 'common' }, { name: '犬の訓練法', rarity: 'common' },
+        { name: '生き物の骨', rarity: 'common' }, { name: '粘着性のある樹脂', rarity: 'common' }
+      ],
+      ghoul: [
+        { name: 'ヤモリのマスク', rarity: 'ultra' }, { name: '玉虫色の眼帯', rarity: 'ultra' },
+        { name: 'CCG身分証明書', rarity: 'very-rare' }, { name: '赤頭のムカデ', rarity: 'very-rare' },
+        { name: '淹れたてのコーヒー', rarity: 'very-rare' }, { name: '拷問器具', rarity: 'very-rare' },
+        { name: '彼岸花', rarity: 'rare' }, { name: 'リゼのメガネ', rarity: 'rare' },
+        { name: 'アオギリの樹のローブ', rarity: 'rare' }, { name: '亜門のネクタイ', rarity: 'rare' },
+        { name: '真戸の手袋', rarity: 'rare' },
+        { name: 'カネキの学生カバン', rarity: 'uncommon' }, { name: 'ヒナミの傘', rarity: 'uncommon' },
+        { name: 'ヒデのヘッドホン', rarity: 'uncommon' }, { name: '切れた鎖', rarity: 'uncommon' },
+        { name: '血のついたハンカチ', rarity: 'uncommon' },
+        { name: 'たい焼き', rarity: 'common' }, { name: 'あんていくのエプロン', rarity: 'common' },
+        { name: 'カネキの財布', rarity: 'common' }, { name: '黒山羊の卵', rarity: 'common' }
+      ],
+      animatronic: [
+        { name: 'ファズコイン', rarity: 'ultra' }, { name: '玉虫色のレムナント', rarity: 'ultra' },
+        { name: 'お楽しみ袋', rarity: 'very-rare' }, { name: 'アクセスパネル', rarity: 'very-rare' },
+        { name: 'エンドCPU', rarity: 'very-rare' }, { name: 'セレブレート!ポスター', rarity: 'very-rare' },
+        { name: 'チカのよだれ掛け', rarity: 'rare' }, { name: 'フォクシーのフック', rarity: 'rare' },
+        { name: 'フレディの帽子', rarity: 'rare' }, { name: 'ボニーのギターの弦', rarity: 'rare' },
+        { name: '紫の男の絵', rarity: 'rare' },
+        { name: 'パーティーハット', rarity: 'uncommon' }, { name: '事務所の電話', rarity: 'uncommon' },
+        { name: '破れたカーテン', rarity: 'uncommon' }, { name: '警備員バッジ', rarity: 'uncommon' },
+        { name: '飾りリボン', rarity: 'uncommon' },
+        { name: 'レストランのメニュー', rarity: 'common' }, { name: '求人広告', rarity: 'common' },
+        { name: '油で汚れた紙皿', rarity: 'common' }, { name: '腐ったビザ', rarity: 'common' }
+      ],
+      gasu: [
+        { name: 'ニワトリの頭', rarity: 'ultra' }, { name: 'ボロボロのガウン', rarity: 'ultra' },
+        { name: '謎めいた秘薬', rarity: 'very-rare' }, { name: 'ロレンザの屍', rarity: 'very-rare' },
+        { name: '謎めいた秘薬(下位)', rarity: 'very-rare' }, { name: '腐ったブタ', rarity: 'very-rare' },
+        { name: '額に入れた新聞記事', rarity: 'rare' }, { name: '観劇用の双眼鏡', rarity: 'rare' },
+        { name: '血のついたハンカチ', rarity: 'rare' }, { name: '刃の鋭いナイフ', rarity: 'rare' },
+        { name: 'ジャンジラの手首', rarity: 'rare' },
+        { name: '壊れたメトロノーム', rarity: 'uncommon' }, { name: 'ブタの目', rarity: 'uncommon' },
+        { name: 'マライの肉の塊', rarity: 'uncommon' }, { name: 'しわくちゃの楽譜', rarity: 'uncommon' },
+        { name: 'うごめく寄生虫', rarity: 'uncommon' },
+        { name: '壊れたティアラ', rarity: 'common' }, { name: '不運なネズミ', rarity: 'common' },
+        { name: 'ネバネバしたトローチ', rarity: 'common' }, { name: '1冊目の台本', rarity: 'common' }
+      ],
+      first: [
+        { name: '玉虫色のソテリアチップ', rarity: 'ultra' }, { name: 'チェスの駒', rarity: 'ultra' },
+        { name: 'クロゴケグモ', rarity: 'very-rare' }, { name: '壊れたスケートボード', rarity: 'very-rare' },
+        { name: 'ウサギの死骸', rarity: 'very-rare' }, { name: '電気ショック首輪', rarity: 'very-rare' },
+        { name: 'ピザ箱ゴーグル', rarity: 'rare' }, { name: '電極キャップ', rarity: 'rare' },
+        { name: 'ヴィクターのかみそり', rarity: 'rare' }, { name: '偽造死亡証明書', rarity: 'rare' },
+        { name: '首のツル', rarity: 'rare' },
+        { name: '壊れたカセットデッキ', rarity: 'uncommon' }, { name: '壊れたトランシーバー', rarity: 'uncommon' },
+        { name: '時計の針', rarity: 'uncommon' }, { name: '血濡れのローラースケート', rarity: 'uncommon' },
+        { name: '砕けたリストロケット', rarity: 'uncommon' },
+        { name: '古いラジオ', rarity: 'common' }, { name: 'ステンドグラスの壁画', rarity: 'common' },
+        { name: 'ビーズ迷路', rarity: 'common' }, { name: '用務係の身分証明書', rarity: 'common' }
+      ],
+      jason: [
+        { name: '汚れたお金', rarity: 'ultra' }, { name: '玉虫色のボートのエンジン', rarity: 'ultra' },
+        { name: 'なくなったコルク栓抜き', rarity: 'very-rare' }, { name: '保安官のバッジ', rarity: 'very-rare' },
+        { name: '切れたヒューズ', rarity: 'very-rare' }, { name: '血まみれの雑誌', rarity: 'very-rare' },
+        { name: '2本のクギ', rarity: 'rare' }, { name: 'くぼんだアルミ', rarity: 'rare' },
+        { name: 'サウナの石', rarity: 'rare' }, { name: '眼球ゼリー', rarity: 'rare' },
+        { name: '鏡の破片', rarity: 'rare' },
+        { name: 'パーティーホーン', rarity: 'uncommon' }, { name: '寝袋', rarity: 'uncommon' },
+        { name: '有毒廃棄物', rarity: 'uncommon' }, { name: '検死官のコーヒー', rarity: 'uncommon' },
+        { name: '血まみれの笑顔', rarity: 'uncommon' },
+        { name: '園芸用クロー', rarity: 'common' }, { name: '曲がった車輪', rarity: 'common' },
+        { name: '看護師の靴', rarity: 'common' }, { name: '編み棒', rarity: 'common' }
+      ],
+      judgment: [
+        { name: '黒曜石の羽根', rarity: 'ultra' }, { name: '創造者の鏡', rarity: 'ultra' },
+        { name: '破壊者の冠', rarity: 'very-rare' }, { name: 'ゲルハルトの目玉', rarity: 'very-rare' },
+        { name: '即席起爆装置', rarity: 'very-rare' }, { name: '異端者の鎖', rarity: 'very-rare' },
+        { name: '信奉者の目隠し', rarity: 'rare' }, { name: '異端審問の命', rarity: 'rare' },
+        { name: '翼のある聖像', rarity: 'rare' }, { name: '過熱したガラス', rarity: 'rare' },
+        { name: '電気のトーチ', rarity: 'rare' },
+        { name: '支持者の印', rarity: 'uncommon' }, { name: 'オーロラのテレレセプター', rarity: 'uncommon' },
+        { name: '不死の炎', rarity: 'uncommon' }, { name: '告白者の角笛', rarity: 'uncommon' },
+        { name: '磁気の手錠', rarity: 'uncommon' },
+        { name: 'コェンラートの籠手', rarity: 'common' }, { name: '探究者の頭蓋骨', rarity: 'common' },
+        { name: '異端者の印', rarity: 'common' }, { name: '祈りの台', rarity: 'common' }
+      ]
+    };
+
+    function getAddonsForKiller(killerId) {
+      if (KILLER_ADDONS_DB[killerId]) return KILLER_ADDONS_DB[killerId];
+      return [
+        { name: '玉虫色の結晶', rarity: 'ultra' }, { name: '漆黒の秘宝', rarity: 'ultra' },
+        { name: '深紅の血清', rarity: 'very-rare' }, { name: '強化された装甲', rarity: 'very-rare' },
+        { name: '歪んだ秘薬', rarity: 'very-rare' }, { name: '血塗れの牙', rarity: 'very-rare' },
+        { name: '研ぎ澄まされた刃', rarity: 'rare' }, { name: '手入れされた部品', rarity: 'rare' },
+        { name: '硬化した外骨格', rarity: 'rare' }, { name: '不気味な護符', rarity: 'rare' },
+        { name: '研磨された鉄具', rarity: 'rare' },
+        { name: '粗末なお守り', rarity: 'uncommon' }, { name: '擦り切れた革紐', rarity: 'uncommon' },
+        { name: '鈍いナイフ', rarity: 'uncommon' }, { name: '小型の留め具', rarity: 'uncommon' },
+        { name: '錆びたワイヤー', rarity: 'uncommon' },
+        { name: '欠けた小石', rarity: 'common' }, { name: '乾いた木片', rarity: 'common' },
+        { name: '古びた布切れ', rarity: 'common' }, { name: '煤けた釘', rarity: 'common' }
+      ];
+    }
+
+    // 4. アプリケーションState管理
+    const STORAGE_KEY = 'dbd_tracker_state_v7';
+    let appState = {
+      completed: {},       // id: boolean (制覇済み)
+      active: {},          // id: boolean (抽選対象チェック: 初期値true)
+      currentSelectedId: null,
+      currentFilter: 'all',
+      searchQuery: '',
+      allowDuplicates: false,
+
+      // 戦績
+      matchStats: {},      // killerId: { wins: number, losses: number, attemptsOnWin: number[] }
+      matchHistory: [],    // { id, killerId, killerJa, result: 'win'|'lose', timestamp }
+
+      // アドオン
+      addonKillerId: null,
+      addonAllowDuplicates: false,
+      usedAddons: {},      // killerId: [addonName]
+
+      // パーク
+      perkAllowDuplicates: false,
+      usedPerks: [],       // [perkId]
+      customExcludedPerks: {}, // perkId: boolean
+      perkSearchQuery: ''
+    };
+
+    function loadState() {
+      try {
+        const saved = localStorage.getItem(STORAGE_KEY) || localStorage.getItem('dbd_tracker_state_v6');
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          Object.assign(appState, parsed);
+        }
+        // 初期チェック（全員true）
+        KILLER_ROSTER.forEach(k => {
+          if (appState.active[k.id] === undefined) {
+            appState.active[k.id] = true;
+          }
+          if (!appState.matchStats[k.id]) {
+            appState.matchStats[k.id] = { wins: 0, losses: 0, attemptsOnWin: [] };
+          }
+        });
+        if (!appState.addonKillerId) {
+          appState.addonKillerId = appState.currentSelectedId || KILLER_ROSTER[0].id;
+        }
+      } catch (e) {
+        console.error('State load error', e);
+      }
+    }
+
+    function saveState() {
+      try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(appState));
+      } catch (e) {
+        console.error('State save error', e);
+      }
+    }
+
+    // 5. タブ切り替え処理
+    window.switchTab = function(tabName) {
+      const views = {
+        roulette: document.getElementById('view-roulette'),
+        analytics: document.getElementById('view-analytics'),
+        addons: document.getElementById('view-addons'),
+        perks: document.getElementById('view-perks')
+      };
+      const buttons = {
+        roulette: document.getElementById('nav-btn-roulette'),
+        analytics: document.getElementById('nav-btn-analytics'),
+        addons: document.getElementById('nav-btn-addons'),
+        perks: document.getElementById('nav-btn-perks')
+      };
+
+      Object.keys(views).forEach(k => {
+        if (k === tabName) {
+          views[k].classList.remove('hidden');
+          buttons[k].className = 'nav-tab px-3.5 py-1.5 rounded-lg text-white bg-dbd-red transition flex items-center gap-1.5 shrink-0 cursor-pointer';
+        } else {
+          views[k].classList.add('hidden');
+          buttons[k].className = 'nav-tab px-3.5 py-1.5 rounded-lg text-gray-400 hover:text-white transition flex items-center gap-1.5 shrink-0 cursor-pointer';
+        }
+      });
+
+      if (tabName === 'analytics') {
+        renderAnalytics();
+      } else if (tabName === 'addons') {
+        if (appState.currentSelectedId) {
+          appState.addonKillerId = appState.currentSelectedId;
+        }
+        updateAddonKillerSelect();
+        renderAddonCatalog();
+      } else if (tabName === 'perks') {
+        renderPerkCatalog();
+        updatePerkPoolCount();
+      }
+      lucide.createIcons();
+    };
+
+    // 6. ルーレット＆進捗管理ロジック
+    function getRemainingPool() {
+      if (appState.allowDuplicates) {
+        return KILLER_ROSTER.filter(k => appState.active[k.id] !== false);
+      }
+      return KILLER_ROSTER.filter(k => !appState.completed[k.id] && appState.active[k.id] !== false);
+    }
+
+    function updateStats() {
+      const total = KILLER_ROSTER.length;
+      let completedCount = 0;
+      let bannedCount = 0;
+
+      KILLER_ROSTER.forEach(k => {
+        if (appState.completed[k.id]) completedCount++;
+        if (appState.active[k.id] === false) bannedCount++;
+      });
+
+      const remainingPool = getRemainingPool();
+      const remainingCount = remainingPool.length;
+      const percentage = Math.round((completedCount / total) * 100);
+
+      document.getElementById('stat-completed-count').textContent = completedCount;
+      document.getElementById('stat-total-count').textContent = total;
+      document.getElementById('stat-remaining-count').textContent = remainingCount;
+      document.getElementById('stat-banned-count').textContent = bannedCount;
+      document.getElementById('stat-percentage').textContent = `${percentage}%`;
+      document.getElementById('completion-badge').textContent = `${percentage}% 達成`;
+      document.getElementById('stat-progress-bar').style.width = `${percentage}%`;
+      document.getElementById('roulette-pool-count').textContent = `抽選対象: ${remainingCount} 体`;
+
+      document.getElementById('count-all').textContent = total;
+      document.getElementById('count-remaining').textContent = remainingCount;
+      document.getElementById('count-completed').textContent = completedCount;
+      document.getElementById('count-banned').textContent = bannedCount;
+    }
+
+    function renderKillerGrid() {
+      const grid = document.getElementById('killer-grid');
+      const emptyState = document.getElementById('empty-state');
+      grid.innerHTML = '';
+
+      const query = appState.searchQuery.toLowerCase().trim();
+
+      const filtered = KILLER_ROSTER.filter(killer => {
+        const isDone = !!appState.completed[killer.id];
+        const isActive = appState.active[killer.id] !== false;
+
+        if (appState.currentFilter === 'remaining' && (isDone || !isActive)) return false;
+        if (appState.currentFilter === 'completed' && !isDone) return false;
+        if (appState.currentFilter === 'banned' && isActive) return false;
+
+        if (query) {
+          const matchJa = killer.ja.toLowerCase().includes(query);
+          const matchEn = killer.en.toLowerCase().includes(query);
+          const matchTitle = killer.title.toLowerCase().includes(query);
+          if (!matchJa && !matchEn && !matchTitle) return false;
+        }
+        return true;
+      });
+
+      if (filtered.length === 0) {
+        emptyState.classList.remove('hidden');
+      } else {
+        emptyState.classList.add('hidden');
+      }
+
+      filtered.forEach(killer => {
+        const isCompleted = !!appState.completed[killer.id];
+        const isActive = appState.active[killer.id] !== false;
+        const isSelected = appState.currentSelectedId === killer.id;
+        const stats = appState.matchStats[killer.id] || { wins: 0, losses: 0 };
+
+        const card = document.createElement('div');
+        card.id = `card-${killer.id}`;
+        card.className = `group relative p-3 rounded-xl border transition-all duration-200 select-none flex items-center justify-between gap-3 ${
+          isSelected 
+            ? 'border-dbd-red bg-dbd-red/10 shadow-lg shadow-dbd-red/20' 
+            : isCompleted 
+              ? 'border-emerald-950/60 bg-emerald-950/15 opacity-80' 
+              : !isActive 
+                ? 'border-gray-800 bg-gray-900/30 opacity-40' 
+                : 'border-dbd-border/80 bg-dbd-card/90 hover:border-dbd-border hover:bg-dbd-card'
+        }`;
+
+        card.innerHTML = `
+          <!-- Left: Complete Clickable Area -->
+          <div class="flex items-center gap-2.5 min-w-0 flex-1 cursor-pointer" onclick="toggleComplete('${killer.id}')">
+            <div class="w-5 h-5 rounded-md border flex items-center justify-center transition-colors shrink-0 ${
+              isCompleted 
+                ? 'bg-emerald-600 border-emerald-500 text-white shadow-sm' 
+                : 'border-dbd-border/80 bg-dbd-dark/60 group-hover:border-dbd-muted'
+            }">
+              <i data-lucide="check" class="w-3.5 h-3.5 ${isCompleted ? 'block' : 'hidden'}"></i>
+            </div>
+            <div class="min-w-0">
+              <div class="flex items-center gap-1.5">
+                <span class="text-xs sm:text-sm font-bold text-gray-200 truncate ${isCompleted ? 'line-through text-gray-400' : ''}">
+                  ${killer.ja}
+                </span>
+                ${!isActive ? '<span class="text-[9px] px-1 py-0.2 rounded bg-gray-800 text-gray-400 border border-gray-700">除外中</span>' : ''}
+              </div>
+              <p class="text-[10px] text-dbd-muted truncate font-mono">${killer.en} · ${stats.wins}勝${stats.losses}敗</p>
+            </div>
+          </div>
+
+          <!-- Right: Active/Exclude Checkbox -->
+          <div class="flex items-center gap-1 shrink-0" onclick="toggleActive('${killer.id}', event)">
+            <label class="text-[10px] text-dbd-muted cursor-pointer select-none">対象</label>
+            <input type="checkbox" ${isActive ? 'checked' : ''} class="w-4 h-4 rounded text-dbd-red focus:ring-0 cursor-pointer accent-dbd-red">
+          </div>
+        `;
+        grid.appendChild(card);
+      });
+      lucide.createIcons();
+    }
+
+    window.toggleComplete = function(killerId) {
+      appState.completed[killerId] = !appState.completed[killerId];
+      saveState();
+      updateStats();
+      renderKillerGrid();
+      if (appState.currentSelectedId === killerId) {
+        updateSelectedDisplay(KILLER_ROSTER.find(k => k.id === killerId));
+      }
+    };
+
+    window.toggleActive = function(killerId, event) {
+      if (event) event.stopPropagation();
+      appState.active[killerId] = !(appState.active[killerId] !== false);
+      saveState();
+      updateStats();
+      renderKillerGrid();
+      if (appState.currentSelectedId === killerId) {
+        updateSelectedDisplay(KILLER_ROSTER.find(k => k.id === killerId));
+      }
+    };
+
+    function updateSelectedDisplay(killer) {
+      const nameJa = document.getElementById('roulette-killer-name-ja');
+      const nameEn = document.getElementById('roulette-killer-name-en');
+      const actions = document.getElementById('roulette-match-actions');
+      const statDisplay = document.getElementById('target-killer-stat-display');
+
+      if (!killer) {
+        nameJa.textContent = 'キラーを抽選';
+        nameEn.textContent = 'Ready to roll';
+        nameJa.className = 'text-2xl sm:text-4xl font-extrabold text-white tracking-wide';
+        actions.classList.add('hidden');
+        return;
+      }
+
+      nameJa.textContent = killer.ja;
+      nameEn.textContent = `${killer.en} (${killer.title})`;
+      nameJa.className = 'text-2xl sm:text-4xl font-extrabold text-white tracking-wide text-blood-glow';
+      actions.classList.remove('hidden');
+
+      const st = appState.matchStats[killer.id] || { wins: 0, losses: 0, attemptsOnWin: [] };
+      const currentAttempt = (st.losses % 99) + 1;
+      statDisplay.textContent = `${st.wins}勝 ${st.losses}敗 (現在挑戦中: ${currentAttempt}戦目)`;
+      lucide.createIcons();
+    }
+
+    // 7. 勝敗 (Win / Lose) アクション
+    function recordMatch(isWin) {
+      const kid = appState.currentSelectedId;
+      if (!kid) return;
+
+      const k = KILLER_ROSTER.find(item => item.id === kid);
+      const st = appState.matchStats[kid] || { wins: 0, losses: 0, attemptsOnWin: [] };
+
+      if (isWin) {
+        st.wins += 1;
+        const attemptsNeeded = (st.losses % 99) + 1;
+        st.attemptsOnWin.push(attemptsNeeded);
+        appState.completed[kid] = true; // 制覇
+      } else {
+        st.losses += 1;
+      }
+
+      appState.matchStats[kid] = st;
+      appState.matchHistory.unshift({
+        id: Date.now(),
+        killerId: kid,
+        killerJa: k ? k.ja : kid,
+        result: isWin ? 'win' : 'lose',
+        totalMatches: st.wins + st.losses,
+        timestamp: new Date().toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' })
+      });
+
+      saveState();
+      updateStats();
+      renderKillerGrid();
+      updateSelectedDisplay(k);
+
+      if (isWin) {
+        setTimeout(() => {
+          spinRoulette();
+        }, 500);
+      }
+    }
+
+    // 8. ルーレット回転アニメーション
+    let isSpinning = false;
+    function spinRoulette() {
+      if (isSpinning) return;
+      const pool = getRemainingPool();
+
+      if (pool.length === 0) {
+        openModal(
+          '抽選可能なキラーがいません',
+          'すべてのキラーを制覇したか、チェックが外れています。進捗リセットを行うか、チェックを有効にしてください。',
+          () => {}
+        );
+        return;
+      }
+
+      isSpinning = true;
+      const btn = document.getElementById('btn-spin');
+      const box = document.getElementById('roulette-display-box');
+      const flair = document.getElementById('roulette-flair');
+      const nameJa = document.getElementById('roulette-killer-name-ja');
+      const nameEn = document.getElementById('roulette-killer-name-en');
+      const actions = document.getElementById('roulette-match-actions');
+
+      btn.disabled = true;
+      btn.classList.add('opacity-50', 'cursor-not-allowed');
+      actions.classList.add('hidden');
+      box.classList.add('animate-spin-shake', 'border-dbd-red');
+      flair.classList.remove('opacity-0');
+
+      let speed = 50;
+      let duration = 1800;
+      let elapsed = 0;
+
+      const interval = setInterval(() => {
+        const temp = pool[Math.floor(Math.random() * pool.length)];
+        nameJa.textContent = temp.ja;
+        nameEn.textContent = temp.en;
+        elapsed += speed;
+
+        if (elapsed >= duration) {
+          clearInterval(interval);
+          const finalWinner = pool[Math.floor(Math.random() * pool.length)];
+          appState.currentSelectedId = finalWinner.id;
+          appState.addonKillerId = finalWinner.id;
+          saveState();
+
+          box.classList.remove('animate-spin-shake');
+          flair.classList.add('opacity-0');
+          btn.disabled = false;
+          btn.classList.remove('opacity-50', 'cursor-not-allowed');
+          isSpinning = false;
+
+          updateSelectedDisplay(finalWinner);
+          renderKillerGrid();
+
+          const cardEl = document.getElementById(`card-${finalWinner.id}`);
+          if (cardEl) {
+            cardEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+          }
+        }
+      }, speed);
+    }
+
+    // 9. 戦績分析 (Chart.js)
+    let chartAttempts = null;
+    let chartRatio = null;
+    let sortAttemptsDesc = true;
+
+    function renderAnalytics() {
+      let totalWins = 0;
+      let totalLosses = 0;
+      let totalAttemptsList = [];
+
+      KILLER_ROSTER.forEach(k => {
+        const st = appState.matchStats[k.id];
+        if (st) {
+          totalWins += st.wins;
+          totalLosses += st.losses;
+          if (st.attemptsOnWin && st.attemptsOnWin.length > 0) {
+            totalAttemptsList.push(...st.attemptsOnWin);
+          }
+        }
+      });
+
+      const totalMatches = totalWins + totalLosses;
+      const winRate = totalMatches > 0 ? ((totalWins / totalMatches) * 100).toFixed(1) : '0.0';
+      const avgAttempts = totalAttemptsList.length > 0 
+        ? (totalAttemptsList.reduce((a, b) => a + b, 0) / totalAttemptsList.length).toFixed(1)
+        : '0.0';
+
+      document.getElementById('analytics-total-matches').textContent = totalMatches;
+      document.getElementById('analytics-total-wins').textContent = totalWins;
+      document.getElementById('analytics-win-rate').textContent = `${winRate}%`;
+      document.getElementById('analytics-avg-attempts').textContent = `${avgAttempts} 戦`;
+
+      const attemptsData = [];
+      KILLER_ROSTER.forEach(k => {
+        const st = appState.matchStats[k.id];
+        if (st && st.attemptsOnWin && st.attemptsOnWin.length > 0) {
+          const avg = st.attemptsOnWin.reduce((a, b) => a + b, 0) / st.attemptsOnWin.length;
+          attemptsData.push({ name: k.ja, attempts: Number(avg.toFixed(1)) });
+        }
+      });
+
+      if (sortAttemptsDesc) {
+        attemptsData.sort((a, b) => b.attempts - a.attempts);
+      } else {
+        attemptsData.sort((a, b) => a.attempts - b.attempts);
+      }
+
+      const ctxAttempts = document.getElementById('chart-attempts').getContext('2d');
+      if (chartAttempts) chartAttempts.destroy();
+
+      chartAttempts = new Chart(ctxAttempts, {
+        type: 'bar',
+        data: {
+          labels: attemptsData.length > 0 ? attemptsData.map(d => d.name) : ['データなし'],
+          datasets: [{
+            label: '勝利までの平均試合数',
+            data: attemptsData.length > 0 ? attemptsData.map(d => d.attempts) : [0],
+            backgroundColor: 'rgba(229, 30, 43, 0.7)',
+            borderColor: '#e51e2b',
+            borderWidth: 1,
+            borderRadius: 6
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          scales: {
+            y: { beginAtZero: true, grid: { color: '#2c3140' }, ticks: { color: '#a0aec0' } },
+            x: { grid: { display: false }, ticks: { color: '#a0aec0', maxRotation: 45, minRotation: 45 } }
+          },
+          plugins: {
+            legend: { labels: { color: '#e2e8f0' } }
+          }
+        }
+      });
+
+      const ctxRatio = document.getElementById('chart-ratio').getContext('2d');
+      if (chartRatio) chartRatio.destroy();
+
+      chartRatio = new Chart(ctxRatio, {
+        type: 'doughnut',
+        data: {
+          labels: ['勝利 (Wins)', '敗北 (Losses)'],
+          datasets: [{
+            data: totalMatches > 0 ? [totalWins, totalLosses] : [1, 0],
+            backgroundColor: totalMatches > 0 ? ['#10b981', '#e11d48'] : ['#2c3140', '#1c1f28'],
+            borderWidth: 0
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: { position: 'bottom', labels: { color: '#e2e8f0' } }
+          }
+        }
+      });
+
+      const tbody = document.getElementById('match-history-table-body');
+      tbody.innerHTML = '';
+      if (appState.matchHistory.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="5" class="text-center py-6 text-dbd-muted">対戦履歴がありません</td></tr>`;
+      } else {
+        appState.matchHistory.slice(0, 30).forEach((item, index) => {
+          const tr = document.createElement('tr');
+          tr.className = 'hover:bg-dbd-card/50 transition';
+          tr.innerHTML = `
+            <td class="px-4 py-2 font-mono text-dbd-muted">${index + 1}</td>
+            <td class="px-4 py-2 font-bold text-white">${item.killerJa}</td>
+            <td class="px-4 py-2 font-bold ${item.result === 'win' ? 'text-emerald-400' : 'text-rose-400'}">
+              ${item.result === 'win' ? 'WIN' : 'LOSE'}
+            </td>
+            <td class="px-4 py-2 font-mono text-gray-400">${item.totalMatches}戦目</td>
+            <td class="px-4 py-2 text-dbd-muted">${item.timestamp}</td>
+          `;
+          tbody.appendChild(tr);
+        });
+      }
+    }
+
+    // 10. アドオン抽選機能
+    function updateAddonKillerSelect() {
+      const select = document.getElementById('addon-killer-select');
+      select.innerHTML = '';
+      KILLER_ROSTER.forEach(k => {
+        const opt = document.createElement('option');
+        opt.value = k.id;
+        opt.textContent = k.ja;
+        if (k.id === appState.addonKillerId) opt.selected = true;
+        select.appendChild(opt);
+      });
+      const current = KILLER_ROSTER.find(k => k.id === appState.addonKillerId);
+      document.getElementById('addon-catalog-title').textContent = `${current ? current.ja : ''} のアドオンカタログ`;
+    }
+
+    function renderAddonCatalog() {
+      const grid = document.getElementById('addon-catalog-grid');
+      grid.innerHTML = '';
+      const list = getAddonsForKiller(appState.addonKillerId);
+      const used = appState.usedAddons[appState.addonKillerId] || [];
+
+      list.forEach(addon => {
+        const isUsed = !appState.addonAllowDuplicates && used.includes(addon.name);
+        const card = document.createElement('div');
+        card.className = `p-2.5 rounded-xl border text-xs flex flex-col justify-between transition ${
+          isUsed ? 'bg-dbd-card/30 border-gray-800 opacity-40' : 'bg-dbd-card border-dbd-border'
+        }`;
+
+        let rarityBadge = '';
+        if (addon.rarity === 'ultra') rarityBadge = '<span class="text-[9px] px-1.5 py-0.2 rounded bg-pink-950/60 text-pink-400 border border-pink-700/50 font-bold">Ultra Rare</span>';
+        else if (addon.rarity === 'very-rare') rarityBadge = '<span class="text-[9px] px-1.5 py-0.2 rounded bg-purple-950/60 text-purple-400 border border-purple-700/50 font-bold">Very Rare</span>';
+        else if (addon.rarity === 'rare') rarityBadge = '<span class="text-[9px] px-1.5 py-0.2 rounded bg-emerald-950/60 text-emerald-400 border border-emerald-700/50 font-bold">Rare</span>';
+        else if (addon.rarity === 'uncommon') rarityBadge = '<span class="text-[9px] px-1.5 py-0.2 rounded bg-amber-950/60 text-amber-400 border border-amber-700/50 font-bold">Uncommon</span>';
+        else rarityBadge = '<span class="text-[9px] px-1.5 py-0.2 rounded bg-amber-950/30 text-amber-600 border border-amber-800/40 font-bold">Common</span>';
+
+        card.innerHTML = `
+          <div>
+            <div class="mb-1">${rarityBadge}</div>
+            <p class="font-bold text-white text-xs ${isUsed ? 'line-through text-gray-500' : ''}">${addon.name}</p>
+          </div>
+          ${isUsed ? '<span class="text-[9px] text-amber-500 font-semibold mt-1">使用済み</span>' : ''}
+        `;
+        grid.appendChild(card);
+      });
+    }
+
+    let isAddonSpinning = false;
+    function spinAddons() {
+      if (isAddonSpinning) return;
+      const allAddons = getAddonsForKiller(appState.addonKillerId);
+      const used = appState.usedAddons[appState.addonKillerId] || [];
+      let pool = appState.addonAllowDuplicates ? [...allAddons] : allAddons.filter(a => !used.includes(a.name));
+
+      if (pool.length < 2) {
+        openModal(
+          'アドオンが不足しています',
+          '抽選可能なアドオンが2個未満です。「プール全復活」ボタンを押すか、「重複許可」をONにしてください。',
+          () => {}
+        );
+        return;
+      }
+
+      isAddonSpinning = true;
+      const btn = document.getElementById('btn-spin-addons');
+      const slots = [document.getElementById('addon-slot-1'), document.getElementById('addon-slot-2')];
+      const names = [document.getElementById('addon-name-1'), document.getElementById('addon-name-2')];
+      const rarities = [document.getElementById('addon-rarity-1'), document.getElementById('addon-rarity-2')];
+
+      btn.disabled = true;
+      btn.classList.add('opacity-50', 'cursor-not-allowed');
+      slots.forEach(s => s.classList.add('animate-spin-shake', 'border-amber-500'));
+
+      let elapsed = 0;
+      const speed = 50;
+      const duration = 1500;
+
+      const interval = setInterval(() => {
+        const rand1 = Math.floor(Math.random() * pool.length);
+        let rand2 = Math.floor(Math.random() * pool.length);
+        while (rand2 === rand1) rand2 = Math.floor(Math.random() * pool.length);
+
+        names[0].textContent = pool[rand1].name;
+        names[1].textContent = pool[rand2].name;
+        elapsed += speed;
+
+        if (elapsed >= duration) {
+          clearInterval(interval);
+
+          const finalPool = [...pool];
+          const chosen1 = finalPool.splice(Math.floor(Math.random() * finalPool.length), 1)[0];
+          const chosen2 = finalPool.splice(Math.floor(Math.random() * finalPool.length), 1)[0];
+
+          names[0].textContent = chosen1.name;
+          names[1].textContent = chosen2.name;
+          rarities[0].textContent = chosen1.rarity.toUpperCase();
+          rarities[1].textContent = chosen2.rarity.toUpperCase();
+
+          if (!appState.addonAllowDuplicates) {
+            if (!appState.usedAddons[appState.addonKillerId]) appState.usedAddons[appState.addonKillerId] = [];
+            appState.usedAddons[appState.addonKillerId].push(chosen1.name, chosen2.name);
+            saveState();
+          }
+
+          slots.forEach(s => s.classList.remove('animate-spin-shake'));
+          btn.disabled = false;
+          btn.classList.remove('opacity-50', 'cursor-not-allowed');
+          isAddonSpinning = false;
+          renderAddonCatalog();
+        }
+      }, speed);
+    }
+
+    // 11. パーク抽選機能 (全145種・英語表記なし)
+    function getAvailablePerksPool() {
+      const used = appState.usedPerks || [];
+      const excluded = appState.customExcludedPerks || {};
+
+      return KILLER_PERKS_DB.filter(p => {
+        if (excluded[p.id]) return false;
+        if (!appState.perkAllowDuplicates && used.includes(p.id)) return false;
+        return true;
+      });
+    }
+
+    function updatePerkPoolCount() {
+      const pool = getAvailablePerksPool();
+      document.getElementById('perk-pool-count').textContent = `抽選プール: ${pool.length} / ${KILLER_PERKS_DB.length} 個`;
+    }
+
+    function renderPerkCatalog() {
+      const grid = document.getElementById('perk-catalog-grid');
+      grid.innerHTML = '';
+      const query = appState.perkSearchQuery || '';
+      const used = appState.usedPerks || [];
+      const excluded = appState.customExcludedPerks || {};
+
+      const filtered = KILLER_PERKS_DB.filter(p => {
+        if (!query) return true;
+        return p.ja.toLowerCase().includes(query) || p.owner.toLowerCase().includes(query);
+      });
+
+      filtered.forEach(perk => {
+        const isUsed = !appState.perkAllowDuplicates && used.includes(perk.id);
+        const isExcluded = !!excluded[perk.id];
+
+        const card = document.createElement('div');
+        card.className = `p-2.5 rounded-xl border transition-all text-xs flex flex-col justify-between ${
+          isUsed || isExcluded
+            ? 'bg-dbd-card/30 border-gray-800 opacity-40'
+            : 'bg-dbd-card border-dbd-border hover:border-purple-500/50'
+        }`;
+
+        card.innerHTML = `
+          <div>
+            <div class="flex items-center justify-between gap-1 mb-1">
+              <span class="text-[9px] font-bold px-1.5 py-0.2 rounded border border-purple-500/40 bg-purple-950/20 text-purple-300">
+                ${perk.owner}
+              </span>
+              <label class="inline-flex items-center gap-1 cursor-pointer" onclick="toggleExcludePerk('${perk.id}', event)">
+                <span class="text-[9px] text-dbd-muted">対象</span>
+                <input type="checkbox" ${(!isExcluded) ? 'checked' : ''} class="w-3.5 h-3.5 rounded text-purple-600 focus:ring-0 cursor-pointer accent-purple-600">
+              </label>
+            </div>
+            <p class="font-bold text-white text-xs truncate ${isUsed ? 'line-through text-gray-500' : ''}">${perk.ja}</p>
+          </div>
+          ${isUsed ? '<span class="text-[9px] text-purple-400 mt-1 font-semibold">使用済み</span>' : ''}
+        `;
+        grid.appendChild(card);
+      });
+      lucide.createIcons();
+    }
+
+    window.toggleExcludePerk = function(perkId, event) {
+      if (event) event.stopPropagation();
+      appState.customExcludedPerks[perkId] = !appState.customExcludedPerks[perkId];
+      saveState();
+      renderPerkCatalog();
+      updatePerkPoolCount();
+    };
+
+    let isPerkSpinning = false;
+    function spinPerks() {
+      if (isPerkSpinning) return;
+      const pool = getAvailablePerksPool();
+
+      if (pool.length < 4) {
+        openModal(
+          'パークが不足しています',
+          '抽選可能なパークが4個未満です。「パーク全復活」ボタンを押すか、「パーク重複許可」をONにしてください。',
+          () => {}
+        );
+        return;
+      }
+
+      isPerkSpinning = true;
+      const btn = document.getElementById('btn-spin-perks');
+      const slots = [
+        document.getElementById('perk-slot-1'),
+        document.getElementById('perk-slot-2'),
+        document.getElementById('perk-slot-3'),
+        document.getElementById('perk-slot-4')
+      ];
+      const names = [
+        document.getElementById('perk-name-1'),
+        document.getElementById('perk-name-2'),
+        document.getElementById('perk-name-3'),
+        document.getElementById('perk-name-4')
+      ];
+      const badges = [
+        document.getElementById('perk-owner-badge-1'),
+        document.getElementById('perk-owner-badge-2'),
+        document.getElementById('perk-owner-badge-3'),
+        document.getElementById('perk-owner-badge-4')
+      ];
+
+      btn.disabled = true;
+      btn.classList.add('opacity-50', 'cursor-not-allowed');
+      slots.forEach(s => s.classList.add('animate-spin-shake', 'border-purple-600'));
+
+      let elapsed = 0;
+      const speed = 50;
+      const duration = 1800;
+
+      const interval = setInterval(() => {
+        const tempIndices = [];
+        while (tempIndices.length < 4) {
+          const r = Math.floor(Math.random() * pool.length);
+          if (!tempIndices.includes(r)) tempIndices.push(r);
+        }
+
+        for (let i = 0; i < 4; i++) {
+          names[i].textContent = pool[tempIndices[i]].ja;
+        }
+        elapsed += speed;
+
+        if (elapsed >= duration) {
+          clearInterval(interval);
+
+          const finalPool = [...pool];
+          const chosenPerks = [];
+          for (let i = 0; i < 4; i++) {
+            const randIdx = Math.floor(Math.random() * finalPool.length);
+            chosenPerks.push(finalPool.splice(randIdx, 1)[0]);
+          }
+
+          for (let i = 0; i < 4; i++) {
+            const p = chosenPerks[i];
+            names[i].textContent = p.ja;
+            badges[i].textContent = p.owner;
+            badges[i].className = 'text-[9px] px-2 py-0.5 rounded-full bg-purple-950/40 text-purple-300 border border-purple-500/40 font-bold';
+          }
+
+          if (!appState.perkAllowDuplicates) {
+            chosenPerks.forEach(p => {
+              if (!appState.usedPerks.includes(p.id)) {
+                appState.usedPerks.push(p.id);
+              }
+            });
+            saveState();
+          }
+
+          slots.forEach(s => s.classList.remove('animate-spin-shake'));
+          btn.disabled = false;
+          btn.classList.remove('opacity-50', 'cursor-not-allowed');
+          isPerkSpinning = false;
+
+          renderPerkCatalog();
+          updatePerkPoolCount();
+        }
+      }, speed);
+    }
+
+    // 12. モーダル管理
+    let modalCallback = null;
+    function openModal(title, desc, onConfirm, showCancel = false) {
+      const modal = document.getElementById('confirm-modal');
+      document.getElementById('modal-title').textContent = title;
+      document.getElementById('modal-desc').textContent = desc;
+      const cancelBtn = document.getElementById('modal-btn-cancel');
+      if (showCancel) cancelBtn.classList.remove('hidden');
+      else cancelBtn.classList.add('hidden');
+
+      modalCallback = onConfirm;
+      modal.classList.remove('hidden');
+    }
+
+    function closeModal() {
+      document.getElementById('confirm-modal').classList.add('hidden');
+      modalCallback = null;
+    }
+
+    // 13. イベントリスナー一括登録
+    function setupEvents() {
+      document.getElementById('btn-spin').addEventListener('click', spinRoulette);
+      document.getElementById('btn-match-win').addEventListener('click', () => recordMatch(true));
+      document.getElementById('btn-match-lose').addEventListener('click', () => recordMatch(false));
+
+      const toggleDuplicates = document.getElementById('toggle-allow-duplicates');
+      const duplicatesLabel = document.getElementById('allow-duplicates-label');
+      const progressPanel = document.getElementById('rotation-progress-panel');
+      const spinBtnText = document.getElementById('btn-spin-text');
+
+      toggleDuplicates.addEventListener('change', (e) => {
+        appState.allowDuplicates = e.target.checked;
+        saveState();
+        if (appState.allowDuplicates) {
+          duplicatesLabel.textContent = 'ON (フリーモード)';
+          duplicatesLabel.className = 'ml-2.5 text-xs font-bold text-amber-400';
+          progressPanel.classList.add('opacity-40', 'pointer-events-none');
+          spinBtnText.textContent = 'ROULETTE START (重複抽選中)';
+        } else {
+          duplicatesLabel.textContent = 'OFF (制覇モード)';
+          duplicatesLabel.className = 'ml-2.5 text-xs font-bold text-gray-400';
+          progressPanel.classList.remove('opacity-40', 'pointer-events-none');
+          spinBtnText.textContent = 'ROULETTE START (未制覇から抽選)';
+        }
+        updateStats();
+      });
+
+      const searchInput = document.getElementById('search-input');
+      const searchClear = document.getElementById('search-clear-btn');
+      searchInput.addEventListener('input', (e) => {
+        appState.searchQuery = e.target.value;
+        if (appState.searchQuery) searchClear.classList.remove('hidden');
+        else searchClear.classList.add('hidden');
+        renderKillerGrid();
+      });
+      searchClear.addEventListener('click', () => {
+        searchInput.value = '';
+        appState.searchQuery = '';
+        searchClear.classList.add('hidden');
+        renderKillerGrid();
+      });
+
+      document.querySelectorAll('.filter-tab').forEach(tab => {
+        tab.addEventListener('click', () => {
+          document.querySelectorAll('.filter-tab').forEach(t => {
+            t.className = 'filter-tab px-3.5 py-1.5 rounded-lg text-xs font-semibold bg-dbd-card text-gray-400 hover:text-white transition cursor-pointer';
+          });
+          tab.className = 'filter-tab px-3.5 py-1.5 rounded-lg text-xs font-semibold bg-dbd-red text-white transition cursor-pointer';
+          appState.currentFilter = tab.getAttribute('data-filter');
+          renderKillerGrid();
+        });
+      });
+
+      document.getElementById('btn-select-all').addEventListener('click', () => {
+        openModal('全キラーを完了にしますか？', 'すべてのキラーを「達成済み」としてチェックを入れます。', () => {
+          KILLER_ROSTER.forEach(k => appState.completed[k.id] = true);
+          saveState();
+          updateStats();
+          renderKillerGrid();
+        }, true);
+      });
+
+      document.getElementById('btn-unban-all').addEventListener('click', () => {
+        openModal('全員を抽選対象にしますか？', 'チェックが外れているキラーをすべて抽選対象に戻します。', () => {
+          KILLER_ROSTER.forEach(k => appState.active[k.id] = true);
+          saveState();
+          updateStats();
+          renderKillerGrid();
+        }, true);
+      });
+
+      document.getElementById('btn-reset-all').addEventListener('click', () => {
+        openModal('全進捗のリセット', 'キラー制覇状況のチェックをすべて解除して、最初からやり直しますか？', () => {
+          appState.completed = {};
+          saveState();
+          updateStats();
+          renderKillerGrid();
+        }, true);
+      });
+
+      document.getElementById('btn-chart-sort').addEventListener('click', () => {
+        sortAttemptsDesc = !sortAttemptsDesc;
+        document.getElementById('btn-chart-sort').textContent = sortAttemptsDesc ? '戦数降順でソート' : '戦数昇順でソート';
+        renderAnalytics();
+      });
+
+      document.getElementById('btn-clear-stats').addEventListener('click', () => {
+        openModal('戦績履歴のクリア', 'すべてのキラーの勝敗数・履歴ログをリセットしますか？（制覇チェックは維持されます）', () => {
+          KILLER_ROSTER.forEach(k => {
+            appState.matchStats[k.id] = { wins: 0, losses: 0, attemptsOnWin: [] };
+          });
+          appState.matchHistory = [];
+          saveState();
+          renderAnalytics();
+          if (appState.currentSelectedId) {
+            updateSelectedDisplay(KILLER_ROSTER.find(k => k.id === appState.currentSelectedId));
+          }
+        }, true);
+      });
+
+      document.getElementById('addon-killer-select').addEventListener('change', (e) => {
+        appState.addonKillerId = e.target.value;
+        saveState();
+        updateAddonKillerSelect();
+        renderAddonCatalog();
+      });
+
+      document.getElementById('btn-sync-addon-killer').addEventListener('click', () => {
+        if (appState.currentSelectedId) {
+          appState.addonKillerId = appState.currentSelectedId;
+          saveState();
+          updateAddonKillerSelect();
+          renderAddonCatalog();
+        }
+      });
+
+      document.getElementById('toggle-addon-duplicates').addEventListener('change', (e) => {
+        appState.addonAllowDuplicates = e.target.checked;
+        saveState();
+        renderAddonCatalog();
+      });
+
+      document.getElementById('btn-spin-addons').addEventListener('click', spinAddons);
+
+      document.getElementById('btn-reset-addons-pool').addEventListener('click', () => {
+        appState.usedAddons[appState.addonKillerId] = [];
+        saveState();
+        renderAddonCatalog();
+      });
+
+      document.getElementById('toggle-perk-duplicates').addEventListener('change', (e) => {
+        appState.perkAllowDuplicates = e.target.checked;
+        saveState();
+        renderPerkCatalog();
+        updatePerkPoolCount();
+      });
+
+      document.getElementById('btn-spin-perks').addEventListener('click', spinPerks);
+
+      document.getElementById('btn-reset-perks-pool').addEventListener('click', () => {
+        appState.usedPerks = [];
+        saveState();
+        renderPerkCatalog();
+        updatePerkPoolCount();
+      });
+
+      document.getElementById('perk-search-input').addEventListener('input', (e) => {
+        appState.perkSearchQuery = e.target.value.toLowerCase().trim();
+        renderPerkCatalog();
+      });
+
+      document.getElementById('modal-btn-confirm').addEventListener('click', () => {
+        if (modalCallback) modalCallback();
+        closeModal();
+      });
+      document.getElementById('modal-btn-cancel').addEventListener('click', closeModal);
+    }
+
+    // 14. 起動初期化
+    window.onload = function() {
+      loadState();
+      setupEvents();
+      updateStats();
+
+      if (appState.currentSelectedId) {
+        const current = KILLER_ROSTER.find(k => k.id === appState.currentSelectedId);
+        updateSelectedDisplay(current);
+      }
+
+      renderKillerGrid();
+      lucide.createIcons();
+    };
+  </script>
+</body>
+</html>
